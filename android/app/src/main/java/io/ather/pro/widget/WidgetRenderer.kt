@@ -94,12 +94,12 @@ object WidgetRenderer {
             }
             setViewVisibility(R.id.widget_charge_row, if (limitEnabled) View.VISIBLE else View.GONE)
             if (snapshot.limitPercent != null) {
-                setTextViewText(R.id.widget_charge_limit, "Limit ${snapshot.limitPercent}%")
+                setTextViewText(R.id.widget_charge_limit, "${if (snapshot.alertOnly) "Alert" else "Limit"} ${snapshot.limitPercent}%")
                 setTextViewText(R.id.widget_charge_status, snapshot.estimatedStopAtMs?.let {
                     "Est. stop ${DateFormat.getTimeFormat(context).format(Date(it))}"
                 } ?: snapshot.chargeLabel.substringAfter(" · ", ""))
                 setImageViewBitmap(R.id.widget_limit_bar, limitBar(snapshot.socPercent, snapshot.limitPercent, accent, track, marker))
-                setContentDescription(R.id.widget_limit_bar, "Battery ${snapshot.socText}, charge limit ${snapshot.limitPercent}%")
+                setContentDescription(R.id.widget_limit_bar, "Battery ${snapshot.socText}, charge ${if (snapshot.alertOnly) "alert" else "limit"} ${snapshot.limitPercent}%")
             }
             setTextViewText(R.id.widget_connection, status)
             setTextColor(R.id.widget_connection, if (status == "Live" || status == "Charging") accent else secondary)

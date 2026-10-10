@@ -29,6 +29,37 @@ class ChargeLimitSnapshotTest {
 
     @After fun close() { scope.cancel() }
 
+    @Test fun detected450SBlocksManualAndAutomaticCommands() {
+        cloud.profile = VehicleProfile(modelType = "450s")
+        repository.applyCredentials("test-token", "test-vehicle")
+        cloud.snapshot(87.0, "Charging", now)
+        repository.setChargeLimit(true, 88)
+        assertTrue(repository.chargeLimit.value.alertOnly)
+        assertFalse(repository.pauseCharging())
+        assertFalse(repository.resumeCharging())
+        now += 1
+        cloud.snapshot(89.0, "Charging", now)
+        assertFalse(repository.chargeLimit.value.armed)
+        repository.retryChargeLimit()
+        repeat(5) { refresh(); cloud.snapshot(90.0, "Charging", now) }
+        assertTrue(cloud.commands.isEmpty())
+        assertEquals(ChargeLimitController.Status.MONITORING, repository.chargeLimit.value.status)
+    }
+
+    @Test fun modelLookupMustFinishBeforeAnyChargingCommand() {
+        cloud.deferProfile = true
+        repository.applyCredentials("test-token", "test-vehicle")
+        cloud.snapshot(90.0, "Charging", now)
+        repository.setChargeLimit(true, 88)
+        assertFalse(repository.pauseCharging())
+        assertFalse(repository.resumeCharging())
+        assertTrue(cloud.commands.isEmpty())
+        cloud.profileCallback?.invoke(Result.success(VehicleProfile(modelType = "450s")))
+        assertTrue(repository.chargeLimit.value.alertOnly)
+        assertFalse(repository.chargeLimit.value.enabled)
+        assertTrue(cloud.commands.isEmpty())
+    }
+
     private fun begin() {
         repository.applyCredentials("test-token", "test-vehicle")
         cloud.snapshot(97.76, "Charging", now)
@@ -143,6 +174,9 @@ class ChargeLimitSnapshotTest {
         private val parser = AtherApiClient()
         val sockets = mutableListOf<QuietSocket>()
         val commands = mutableListOf<Boolean>()
+        var profile = VehicleProfile()
+        var deferProfile = false
+        var profileCallback: ((Result<VehicleProfile>) -> Unit)? = null
 
         override fun connect(token: String, uuid: String, listener: AtherCloudApi.Listener): WebSocket {
             val socket = QuietSocket(listener)
@@ -156,7 +190,8 @@ class ChargeLimitSnapshotTest {
             callback(Result.success(Unit))
         }
         override fun fetchVehicleProfile(token: String, uuid: String, callback: (Result<VehicleProfile>) -> Unit) {
-            callback(Result.success(VehicleProfile()))
+            profileCallback = callback
+            if (!deferProfile) callback(Result.success(profile))
         }
         override fun fetchRides(token: String, scooterId: String,
             callback: (Result<List<io.ather.pro.domain.ride.RideLog.CloudFields>>) -> Unit) {

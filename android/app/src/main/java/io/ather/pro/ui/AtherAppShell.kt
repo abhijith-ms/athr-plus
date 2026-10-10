@@ -95,7 +95,10 @@ fun AtherAppShell(
                         Destination.CHARGING -> LazyColumn(contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                             item { FreshnessLabel(dashboard) }
                             item { ChargeLimitCard(chargeLimit, dashboard, onChargeLimitEnabledChange, onChargeLimitPercentChange, onChargeLimitRetry) }
-                            item { ChargingActions(dashboard.telemetry, dashboard.remoteChargingCommand,
+                            if (!dashboard.chargeAlertOnly && dashboard.vehicleProfile == null) item {
+                                Text("Charging controls are waiting for vehicle details. Refresh if this persists.")
+                            }
+                            if (!dashboard.chargeAlertOnly && dashboard.vehicleProfile != null) item { ChargingActions(dashboard.telemetry, dashboard.remoteChargingCommand,
                                 onPauseCharging, onResumeCharging, onRetryLatch = onClearRemoteChargingLatch) }
                             item { ChargeEstimateCard(dashboard, chargeLimit.percent) }
                             item { ChargingHistoryCard(insights) }

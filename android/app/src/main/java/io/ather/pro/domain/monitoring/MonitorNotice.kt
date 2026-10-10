@@ -22,6 +22,15 @@ data class MonitorNotice(
     companion object {
         fun from(nowMs: Long, state: ScooterDashboardState, limit: ChargeLimitController.Snapshot): MonitorNotice {
             val telemetry = state.telemetry
+            if (state.chargeAlertOnly || limit.alertOnly) {
+                val soc = telemetry?.batterySoc?.takeIf { it.isFinite() && it in 0.0..100.0 }?.roundToInt()
+                val fresh = ChargeLimitController.isFresh(state.batteryUpdatedAt, nowMs)
+                val title = if (state.connection != ConnectionStatus.CONNECTED || !fresh) "Waiting for scooter"
+                    else if (limit.enabled && !limit.armed) "Charge target reached" else "Charge target monitor"
+                val detail = if (limit.enabled) "Alert at ${limit.percent}% · Unplug manually; automatic cutoff unavailable"
+                    else "Charge alert off · Automatic cutoff unavailable on 450S"
+                return MonitorNotice(title, detail, soc, null)
+            }
             val soc = telemetry?.batterySoc?.takeIf { it.isFinite() && it in 0.0..100.0 }?.roundToInt()
             val connected = state.connection == ConnectionStatus.CONNECTED
             val updatedAt = state.lastUpdated

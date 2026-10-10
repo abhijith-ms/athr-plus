@@ -125,7 +125,7 @@ fun EnergySummaryCard(state: ScooterDashboardState, limit: ChargeLimitController
                         style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Medium)
                 }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("CHARGE LIMIT", color = muted, style = MaterialTheme.typography.labelSmall, letterSpacing = 1.sp)
+                    Text(if (state.chargeAlertOnly || limit.alertOnly) "CHARGE ALERT" else "CHARGE LIMIT", color = muted, style = MaterialTheme.typography.labelSmall, letterSpacing = 1.sp)
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         if (limit.enabled) Box(Modifier.size(5.dp).clip(RoundedCornerShape(50)).background(colors.tertiary))
                         Text(if (limit.enabled) "${limit.percent}%" else "Off", color = if (limit.enabled) accent else muted,
@@ -133,7 +133,7 @@ fun EnergySummaryCard(state: ScooterDashboardState, limit: ChargeLimitController
                     }
                 }
             }
-            if (limit.enabled && limit.armed && limit.status == ChargeLimitController.Status.MONITORING) {
+            if (!state.chargeAlertOnly && !limit.alertOnly && limit.enabled && limit.armed && limit.status == ChargeLimitController.Status.MONITORING) {
                 limit.estimate?.let { estimate ->
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Icon(Icons.Default.Schedule, null, Modifier.size(14.dp), tint = muted)

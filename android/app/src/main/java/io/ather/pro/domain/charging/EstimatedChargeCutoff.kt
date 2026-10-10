@@ -8,7 +8,7 @@ object EstimatedChargeCutoff {
         readingAtMs: Long?, nowMs: Long, capacityWh: Double, observedRate: Double?,
         liveMinutes: Double = 0.0, learnedRate: Double? = state.learnedPercentPerMinute,
         learnedMinutes: Double = state.learnedMinutes): ChargeLimitController.Snapshot {
-        if (!state.enabled || !state.armed || state.status != ChargeLimitController.Status.MONITORING) return state
+        if (state.alertOnly || !state.enabled || !state.armed || state.status != ChargeLimitController.Status.MONITORING) return state
         if (!ChargingControl.isActivelyCharging(telemetry)) {
             // Cancel the timer, but do not permanently block a later Charging
             // update that shares the bike's cached battery timestamp.
@@ -30,7 +30,7 @@ object EstimatedChargeCutoff {
 
     fun onDeadline(state: ChargeLimitController.Snapshot, telemetry: ScooterTelemetry?, nowMs: Long): ChargeLimitController.Decision {
         val estimate = state.estimate ?: return ChargeLimitController.Decision.None
-        if (!state.enabled || !state.armed || state.status != ChargeLimitController.Status.MONITORING ||
+        if (state.alertOnly || !state.enabled || !state.armed || state.status != ChargeLimitController.Status.MONITORING ||
             !estimate.isValid() || estimate.targetPercent != state.percent ||
             estimate.chargerPowerW != state.chargerPowerW || nowMs < estimate.stopAtMs ||
             !ChargingControl.isActivelyCharging(telemetry)) return ChargeLimitController.Decision.None

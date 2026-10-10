@@ -10,6 +10,7 @@ import io.ather.pro.data.local.SavedScooterReadingPrefs
 import io.ather.pro.data.local.SavedScooterReadingStore
 import io.ather.pro.data.local.TripBaseline
 import io.ather.pro.domain.charging.ChargingEvidence
+import io.ather.pro.domain.charging.ChargeTargetAlert
 import io.ather.pro.domain.charging.ChargeLimitController
 import io.ather.pro.domain.charging.ChargeLimitSession
 import io.ather.pro.domain.charging.ChargeSnapshotRefresh
@@ -180,7 +181,7 @@ class AtherRepository(
             evidence = ChargingEvidence()
             chargeSession.resetRate()
             _dashboard.update {
-                val cleared = it.copy(telemetry = null, lastUpdated = null, batteryUpdatedAt = null,
+                val cleared = it.copy(vehicleProfile = null, telemetry = null, lastUpdated = null, batteryUpdatedAt = null,
                     chargingUpdatedAt = null, batteryReportedAt = null, chargingRatePercentPerMinute = null,
                     chargingRateMinutes = 0.0, gpsUpdatedAt = null,
                     remoteChargingCommand = RemoteChargingCommand())
@@ -278,6 +279,7 @@ class AtherRepository(
                         } else state.settings
                     )
                 }
+                scope.launch { processChargeLimit(clock()) }
                 profile.scooterId?.let(::loadOfficialRides)
             }.onFailure { error ->
                 val message = error.message.orEmpty()
@@ -522,14 +524,19 @@ class AtherRepository(
 
     override fun setChargeLimit(enabled: Boolean, percent: Int, chargerPowerW: Int?) {
         scope.launch {
-            updateChargeLimit(ChargeLimitController.applySettings(_chargeLimit.value, enabled, percent,
-                chargerPowerW ?: _chargeLimit.value.chargerPowerW))
+            updateChargeLimit(if (_dashboard.value.chargeAlertOnly || _chargeLimit.value.alertOnly) {
+                ChargeTargetAlert.configure(_chargeLimit.value, enabled, percent)
+            } else {
+                ChargeLimitController.applySettings(_chargeLimit.value, enabled, percent,
+                    chargerPowerW ?: _chargeLimit.value.chargerPowerW)
+            })
             processChargeLimit(clock())
         }
     }
 
     override fun retryChargeLimit() {
         scope.launch {
+            if (_dashboard.value.chargeAlertOnly || _chargeLimit.value.alertOnly) return@launch
             updateChargeLimit(ChargeLimitController.retry(_chargeLimit.value))
             processChargeLimit(clock())
         }
@@ -560,8 +567,20 @@ class AtherRepository(
     @Synchronized
     private fun processChargeLimit(nowMs: Long) {
         if (!hasCredentials() || manuallyDisconnected) return
-        if (evidence.batteryAt == null && evidence.chargingAt == null) return
         val dashboard = _dashboard.value
+        if (dashboard.chargeAlertOnly || _chargeLimit.value.alertOnly) {
+            val previous = _chargeLimit.value
+            val decision = ChargeTargetAlert.observe(ChargeTargetAlert.migrate(previous), dashboard.telemetry,
+                evidence.batteryAt, evidence.chargingAt, nowMs)
+            if (decision.next != previous && updateChargeLimit(decision.next) && decision.notify) {
+                appContext?.let { io.ather.pro.util.ChargingNotificationManager.getInstance(it)
+                    .postTargetAlert(decision.next.percent) }
+            }
+            return
+        }
+        // Wait for model discovery before restoring any old automatic cutoff.
+        if (dashboard.vehicleProfile == null) return
+        if (evidence.batteryAt == null && evidence.chargingAt == null) return
         val telemetry = dashboard.telemetry
         val reportedAt = dashboard.batteryReportedAt ?: evidence.batteryAt
         val step = chargeSession.observe(
@@ -752,6 +771,7 @@ class AtherRepository(
         start: Boolean,
         onHttpResult: ((Result<Unit>) -> Unit)? = null
     ): Boolean {
+        if (_dashboard.value.chargeAlertOnly || _dashboard.value.vehicleProfile == null) return false
         val token = authToken
         val uuid = vehicleUuid
         // The gateway callback can be synchronous in tests or unusually fast in

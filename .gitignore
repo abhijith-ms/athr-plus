@@ -26,6 +26,7 @@ ather_session.json
 session.json
 pending-login.json
 last-response.json
+command-response.json
 monitor.jsonl
 .ather-lab/
 atherpro-lab/

@@ -22,7 +22,7 @@ API_KEY = re.compile(
 PRIVATE_KEY = re.compile(rb"-----BEGIN (?:[A-Z0-9]+ )?PRIVATE KEY-----")
 PRIVATE_NAME = re.compile(
     r"(?:^|/)(?:\.env(?:\..*)?|ather_session\.json|session\.json|pending-login\.json|"
-    r"last-response\.json|monitor\.jsonl|charge-limit-state\.json|charge-limit\.lock|"
+    r"last-response\.json|command-response\.json|monitor\.jsonl|charge-limit-state\.json|charge-limit\.lock|"
     r"[^/]*session-seed[^/]*\.json|atherpro-lab)(?:/|$)",
     re.I,
 )

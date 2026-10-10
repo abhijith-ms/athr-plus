@@ -51,7 +51,8 @@ object ChargeLimitController {
         /** Saved charging speed, in percent per minute, from earlier charges. */
         val learnedPercentPerMinute: Double? = null,
         val learnedMinutes: Double = 0.0,
-        val learnedSessions: Int = 0
+        val learnedSessions: Int = 0,
+        val alertOnly: Boolean = false
     )
 
     sealed class Decision {
@@ -134,6 +135,7 @@ object ChargeLimitController {
         confirmTimeoutMs: Long = CONFIRM_TIMEOUT_MS,
         chargingUpdatedMs: Long? = lastUpdatedMs
     ): Decision {
+        if (state.alertOnly) return Decision.None
         if (!state.enabled) {
             return if (state.status == Status.DISABLED && !state.armed && state.message == null) {
                 Decision.None

@@ -129,7 +129,7 @@ fun BatteryHistoryCard(dashboard: ScooterDashboardState, modifier: Modifier = Mo
                     )
                 }
             }
-            Text("Last 24 hours saved on this phone · Gaps mean no readings" + (chargeLimitPercent?.let { " · Dashed limit $it%" } ?: ""),
+            Text("Last 24 hours saved on this phone · Gaps mean no readings" + (chargeLimitPercent?.let { " · Dashed target $it%" } ?: ""),
                 style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
             Text(pointDescription, style = MaterialTheme.typography.bodyMedium,
                 color = colors.primary, fontWeight = FontWeight.SemiBold)

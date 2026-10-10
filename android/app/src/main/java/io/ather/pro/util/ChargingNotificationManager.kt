@@ -42,6 +42,7 @@ class ChargingNotificationManager private constructor(private val context: Conte
         const val CHANNEL_CHARGE_LIMIT_ID = "charge_limit"
         const val CHANNEL_CHARGE_LIMIT_NAME = "Charge Limit Monitor"
 
+        const val NOTIFICATION_ID_TARGET = 8002
         const val NOTIFICATION_ID_PROGRESS = 1001
         const val NOTIFICATION_ID_ALERT_80 = 8001
         const val NOTIFICATION_ID_ALERT_100 = 10001
@@ -88,7 +89,7 @@ class ChargingNotificationManager private constructor(private val context: Conte
                 CHANNEL_ALERTS_NAME,
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
-                description = "Milestone alerts for 80% and 100% charge completion"
+                description = "Charge target and milestone alerts"
                 enableVibration(true)
                 setShowBadge(true)
             }
@@ -233,6 +234,21 @@ class ChargingNotificationManager private constructor(private val context: Conte
         notificationManager.notify(NOTIFICATION_ID_PROGRESS, notification)
     }
 
+    fun postTargetAlert(percent: Int) {
+        if (!hasNotificationPermission()) return
+        val notification = NotificationCompat.Builder(appContext, CHANNEL_ALERTS_ID)
+            .setSmallIcon(android.R.drawable.ic_lock_idle_charging)
+            .setContentTitle("Athr+ — $percent% target reached")
+            .setContentText("Reported battery reached your target. Charging has not been stopped; unplug manually.")
+            .setStyle(NotificationCompat.BigTextStyle().bigText(
+                "Reported battery reached your target. Charging has not been stopped; unplug manually."))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(createDashboardPendingIntent(NOTIFICATION_ID_TARGET))
+            .setAutoCancel(true)
+            .build()
+        notificationManager.notify(NOTIFICATION_ID_TARGET, notification)
+    }
+
     private fun postAlert80Notification() {
         if (!hasNotificationPermission()) return
 
@@ -288,6 +304,7 @@ class ChargingNotificationManager private constructor(private val context: Conte
     }
 
     fun cancelAll() {
+        notificationManager.cancel(NOTIFICATION_ID_TARGET)
         notificationManager.cancel(NOTIFICATION_ID_PROGRESS)
         notificationManager.cancel(NOTIFICATION_ID_ALERT_80)
         notificationManager.cancel(NOTIFICATION_ID_ALERT_100)

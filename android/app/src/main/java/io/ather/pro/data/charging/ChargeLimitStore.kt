@@ -30,7 +30,8 @@ class ChargeLimitStore(context: Context) {
         val barrier = if (currentTimingPolicy) prefs.getLong("${vehicleUuid}_estimate_barrier", -1L)
             .takeIf { it > 0 } else null
         val learned = learnedRate(vehicleUuid)
-        if (!enabled) return ChargeLimitController.Snapshot(percent = percent, chargerPowerW = power,
+        val alertOnly = prefs.getBoolean("${vehicleUuid}_alert_only", false)
+        if (!enabled) return ChargeLimitController.Snapshot(alertOnly = alertOnly, percent = percent, chargerPowerW = power,
             estimateBlockedThroughMs = barrier,
             learnedPercentPerMinute = learned.first,
             learnedMinutes = learned.second,
@@ -40,6 +41,7 @@ class ChargeLimitStore(context: Context) {
         }.getOrDefault(ChargeLimitController.Status.MONITORING)
         return ChargeLimitController.Snapshot(
             enabled = true,
+            alertOnly = alertOnly,
             percent = percent,
             status = status,
             armed = prefs.getBoolean("${vehicleUuid}_armed", true),
@@ -65,6 +67,7 @@ class ChargeLimitStore(context: Context) {
         if (vehicleUuid.isBlank()) return false
         return prefs.edit()
             .putBoolean(keyEnabled(vehicleUuid), snapshot.enabled)
+            .putBoolean("${vehicleUuid}_alert_only", snapshot.alertOnly)
             .putInt(keyPercent(vehicleUuid), ChargeLimitController.clampPercent(snapshot.percent))
             .putString("${vehicleUuid}_status", snapshot.status.name)
             .putBoolean("${vehicleUuid}_armed", snapshot.armed)

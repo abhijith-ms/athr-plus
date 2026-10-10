@@ -335,7 +335,11 @@ data class ScooterDashboardState(
     val vehicleProfile: VehicleProfile? = null,
     val remoteChargingCommand: RemoteChargingCommand = RemoteChargingCommand()
 ) {
-    /** Detected scooter wins for range, ride modes, and pack size. The saved choice remains only when the profile cannot name a model. */
+    /** Remote charging control is not offered on the 450S. */
+    val chargeAlertOnly: Boolean
+        get() = modelForRange == ScooterModel.ATHER_450S
+
+    /** Detected scooter wins; the saved choice is a fallback for missing model details. */
     val modelForRange: ScooterModel
         get() = vehicleProfile?.resolvedModel ?: settings.selectedModel
 

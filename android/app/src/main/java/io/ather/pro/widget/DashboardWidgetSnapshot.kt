@@ -31,7 +31,8 @@ data class DashboardWidgetSnapshot(
     val limitPercent: Int? = null,
     val estimatedStopAtMs: Long? = null,
     /** Last ride the trip list can open, for example "Last ride 56.2 km/unit". */
-    val lastRideText: String = ""
+    val lastRideText: String = "",
+    val alertOnly: Boolean = false
 ) {
     val socText: String
         get() = socPercent?.let { String.format(Locale.getDefault(), "%.0f%%", it) } ?: "—"
@@ -56,6 +57,7 @@ data class DashboardWidgetSnapshot(
         private const val KEY_UPDATED = "updated"
 
         fun fromDashboard(state: ScooterDashboardState, limit: ChargeLimitController.Snapshot = ChargeLimitController.Snapshot()): DashboardWidgetSnapshot {
+            val alertOnly = state.chargeAlertOnly || limit.alertOnly
             val telemetry = state.telemetry
             val model = state.modelForRange
             val range = RangeEstimator.current(telemetry, model)
@@ -75,7 +77,10 @@ data class DashboardWidgetSnapshot(
                 },
                 updatedAtMs = batteryUpdatedAt ?: 0L,
                 modeRanges = RangeEstimator.modes(telemetry, model),
-                chargeLabel = if (limit.enabled) "Limit ${limit.percent}% · " + when (limit.status) {
+                alertOnly = alertOnly,
+                chargeLabel = if (alertOnly) {
+                    if (limit.enabled) "Alert ${limit.percent}% · Unplug manually" else "Alert off"
+                } else if (limit.enabled) "Limit ${limit.percent}% · " + when (limit.status) {
                     ChargeLimitController.Status.PENDING -> "Stopping"
                     ChargeLimitController.Status.CONFIRMED -> "Paused"
                     ChargeLimitController.Status.ERROR -> "Check app"
@@ -86,7 +91,7 @@ data class DashboardWidgetSnapshot(
                 vehicleName = state.vehicleProfile?.displayName ?: model.displayName,
                 limitPercent = limit.percent.takeIf { limit.enabled },
                 estimatedStopAtMs = limit.estimate?.stopAtMs?.takeIf {
-                    limit.enabled && limit.status == ChargeLimitController.Status.MONITORING
+                    !alertOnly && limit.enabled && limit.status == ChargeLimitController.Status.MONITORING
                 },
                 lastRideText = lastRideLabel(state.recentTrips)
             )
@@ -115,6 +120,7 @@ data class DashboardWidgetSnapshot(
                         Gson().fromJson(prefs.getString("mode_ranges_v2", "[]"), Array<RideModeRange>::class.java)
                             .orEmpty().filter { it != null && !it.name.isNullOrBlank() && it.km.isFinite() && it.km >= 0 }.take(6)
                     }.getOrDefault(emptyList()),
+                    alertOnly = prefs.getBoolean("alert_only", false),
                     chargeLabel = prefs.getString("charge_label", "Limit off").orEmpty(),
                     charging = prefs.getBoolean("charging", false),
                     currentMode = prefs.getString("current_mode", null),
@@ -147,6 +153,7 @@ data class DashboardWidgetSnapshot(
                     putString("mode_ranges_v2", Gson().toJson(snapshot.modeRanges))
                     remove("history")
                     putString("charge_label", snapshot.chargeLabel)
+                    putBoolean("alert_only", snapshot.alertOnly)
                     putInt("limit_percent", snapshot.limitPercent ?: -1)
                     putLong("estimated_stop_at", snapshot.estimatedStopAtMs ?: 0)
                     putBoolean("charging", snapshot.charging)

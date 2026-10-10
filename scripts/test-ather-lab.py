@@ -12,6 +12,7 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+from urllib.error import HTTPError, URLError
 
 
 def load(name, filename):
@@ -43,11 +44,14 @@ class LabTests(unittest.TestCase):
 
     def test_start_and_stop_preview_do_not_contact_api(self):
         for action in ("start", "stop"):
-            with patch.object(sys, "argv", ["ather-lab.py", action]), \
+            for flags in ([], ["--diagnostics"]):
+                with patch.object(sys, "argv", ["ather-lab.py", action, *flags]), \
                     patch.object(lab, "session", return_value={"token": "test", "uuid": "vehicle"}), \
-                    patch.object(lab, "request") as request, contextlib.redirect_stdout(io.StringIO()):
-                lab.main()
-                request.assert_not_called()
+                    patch.object(lab, "request") as request, \
+                    patch.object(lab, "save_private") as save, contextlib.redirect_stdout(io.StringIO()):
+                    lab.main()
+                    request.assert_not_called()
+                    save.assert_not_called()
 
     def test_execute_posts_once_and_keeps_token_out_of_output(self):
         for action in ("start", "stop"):
@@ -115,6 +119,148 @@ class LabTests(unittest.TestCase):
             with self.assertRaises(lab.LabError):
                 lab.request_otp()
             request.assert_not_called()
+
+
+class CommandDiagnosticTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        storage = patch.object(lab, "STORE", Path(directory.name) / "private")
+        storage.start()
+        self.addCleanup(storage.stop)
+        self.data = {"token": fake_jwt(), "uuid": "synthetic-vehicle"}
+
+    def execute(self, body, status=200, action="stop"):
+        response = io.BytesIO(body)
+        response.status = status
+        output = io.StringIO()
+        with patch.object(lab, "build_opener") as opener, \
+                patch.object(lab, "session", return_value=self.data), \
+                patch.object(sys, "argv", ["ather-lab.py", action, "--execute", "--diagnostics"]), \
+                contextlib.redirect_stdout(output):
+            if status >= 400:
+                opener.return_value.open.side_effect = HTTPError(
+                    "https://example.invalid", status, "private exception text", {}, response)
+            else:
+                opener.return_value.open.return_value = response
+            try:
+                lab.main()
+            finally:
+                opener.return_value.open.assert_called_once()
+        return output.getvalue()
+
+    def record(self):
+        return lab.read_private("command-response.json")
+
+    def test_http_success_preserves_application_error_without_claiming_execution(self):
+        for action in ("start", "stop"):
+            output = self.execute(b'{"success":false,"error":{"code":"UNSUPPORTED","message":"Not supported"}}', action=action)
+            record = self.record()
+            self.assertEqual(record["action"], action)
+            self.assertEqual(record["http_status"], 200)
+            self.assertEqual(record["outcome"], "http_response")
+            self.assertFalse(record["response_body"]["success"])
+            self.assertEqual(record["response_body"]["error"]["code"], "UNSUPPORTED")
+            self.assertEqual(record["body_format"], "json")
+            self.assertGreater(record["command_timestamp_ms"], 0)
+            for key in ("requested_at", "finished_at"):
+                lab.time.strptime(record[key], "%Y-%m-%dT%H:%M:%SZ")
+            self.assertIn("execution is unconfirmed", output)
+            self.assertNotIn("accepted by API", output)
+            self.assertEqual((lab.STORE / "command-response.json").stat().st_mode & 0o777, 0o600)
+
+    def test_http_errors_are_captured_and_still_fail(self):
+        for status in (400, 401, 403, 500):
+            with self.assertRaises(lab.LabError) as caught:
+                self.execute(b'{"code":"DENIED","token":"hidden"}', status)
+            self.assertIn(str(status), str(caught.exception))
+            record = self.record()
+            self.assertEqual(record["http_status"], status)
+            self.assertEqual(record["response_body"], {"code": "DENIED", "token": "[redacted]"})
+
+    def test_non_json_errors_and_successes_are_redacted(self):
+        for status in (200, 502):
+            body = ("Service unavailable\nAuthorization: Bearer opaque-credential\n"
+                    "OTP: 654321\n<phone>9876543210</phone>\n"
+                    + self.data["token"] + " " + self.data["uuid"]).encode() + b"\n\xff"
+            with self.assertRaises(lab.LabError):
+                self.execute(body, status)
+            record = self.record()
+            self.assertEqual(record["body_format"], "text")
+            self.assertEqual(record["response_body"], "[redacted]")
+            for private in ("opaque-credential", "654321", "9876543210", *self.data.values()):
+                self.assertNotIn(private, json.dumps(record))
+
+    def test_non_sensitive_non_json_body_is_preserved(self):
+        with self.assertRaises(lab.LabError):
+            self.execute(b"<html>Service unavailable</html>", 503)
+        self.assertEqual(self.record()["response_body"], "<html>Service unavailable</html>")
+
+    def test_multiline_private_values_are_suppressed_in_full(self):
+        with self.assertRaises(lab.LabError):
+            self.execute(b"<authorization>\nopaque-value\n</authorization>", 503)
+        self.assertEqual(self.record()["response_body"], "[redacted]")
+
+    def test_incomplete_response_is_a_read_failure_not_an_empty_success(self):
+        from http.client import IncompleteRead
+        with patch.object(lab, "build_opener") as opener, contextlib.redirect_stdout(io.StringIO()):
+            response = opener.return_value.open.return_value.__enter__.return_value
+            response.status = 200
+            response.read.side_effect = IncompleteRead(b"private partial body")
+            with self.assertRaises(lab.LabError):
+                lab.request("/test", payload=lab.payload_for("stop", "vehicle"), diagnostics=True)
+            opener.return_value.open.assert_called_once()
+        self.assertEqual(self.record()["outcome"], "connection_or_read_failure")
+        self.assertIsNone(self.record()["response_body"])
+
+    def test_nested_echoes_and_dictionary_keys_do_not_leak_credentials(self):
+        body = {"error": [{"userOtp": "654321", "Authorization": "opaque", "gps": [1, 2],
+                           "message": "Authorization: Bearer opaque",
+                           "detail": self.data["token"] + " " + self.data["uuid"]}],
+                self.data["uuid"]: "echo"}
+        output = self.execute(json.dumps(body).encode())
+        captured = json.dumps(self.record()) + output
+        for private in ("654321", "opaque", *self.data.values()):
+            self.assertNotIn(private, captured)
+
+    def test_empty_http_success_is_recorded_without_inventing_body(self):
+        self.execute(b"", 204)
+        self.assertEqual(self.record()["http_status"], 204)
+        self.assertIsNone(self.record()["response_body"])
+
+    def test_network_failure_records_no_http_status_and_never_retries(self):
+        with patch.object(lab, "build_opener") as opener, contextlib.redirect_stdout(io.StringIO()):
+            opener.return_value.open.side_effect = URLError("private exception text")
+            with self.assertRaises(lab.LabError):
+                lab.request("/test", self.data["token"], lab.payload_for("stop", self.data["uuid"]), diagnostics=True)
+            opener.return_value.open.assert_called_once()
+        record = self.record()
+        self.assertIsNone(record["http_status"])
+        self.assertEqual(record["outcome"], "connection_or_read_failure")
+        self.assertNotIn("private exception text", json.dumps(record))
+
+    def test_storage_failure_before_send_prevents_command(self):
+        with patch.object(lab, "save_private", side_effect=OSError("disk full")), \
+                patch.object(lab, "build_opener") as opener:
+            with self.assertRaises(OSError):
+                lab.request("/test", payload=lab.payload_for("stop", "vehicle"), diagnostics=True)
+            opener.assert_not_called()
+
+    def test_storage_failure_after_send_warns_without_retry(self):
+        response = io.BytesIO(b"{}")
+        response.status = 200
+        with patch.object(lab, "save_private", side_effect=[None, OSError("disk full")]), \
+                patch.object(lab, "build_opener") as opener:
+            opener.return_value.open.return_value = response
+            with self.assertRaisesRegex(lab.LabError, "may have been sent"):
+                lab.request("/test", payload=lab.payload_for("stop", "vehicle"), diagnostics=True)
+            opener.return_value.open.assert_called_once()
+
+    def test_logout_removes_command_diagnostics(self):
+        lab.save_private("command-response.json", {"synthetic": True})
+        with patch.object(sys, "argv", ["ather-lab.py", "logout"]), contextlib.redirect_stdout(io.StringIO()):
+            lab.main()
+        self.assertFalse((lab.STORE / "command-response.json").exists())
 
 
 class ChargeLimitTests(unittest.TestCase):
@@ -314,6 +460,9 @@ class GitGuardTests(unittest.TestCase):
     def test_signing_key_containers_are_blocked(self):
         self.assertIsNotNone(guard.reason("assets/signing.keystore", b"binary", []))
         self.assertIsNone(guard.reason("META-INF/CERT.RSA", b"public signature", []))
+
+    def test_command_diagnostic_capture_is_blocked(self):
+        self.assertIsNotNone(guard.reason("captures/command-response.json", b"{}", []))
 
 
 if __name__ == "__main__":

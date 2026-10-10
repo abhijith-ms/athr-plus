@@ -18,6 +18,9 @@ number outside the repository and removes it after successful verification.
 Run these commands from the project root:
 
 ```sh
+python3 -m venv ../.venv-ather-lab
+. ../.venv-ather-lab/bin/activate
+python -m pip install websocket-client
 python3 scripts/secret-guard.py install
 python3 scripts/ather-lab.py login
 ```
@@ -45,15 +48,9 @@ python3 scripts/ather-lab.py rides
 python3 scripts/ather-lab.py health
 ```
 
-Monitoring requires `websocket-client`, already available in this computer's
-current Python environment. On another computer, install it in a local virtual
-environment and use that interpreter:
-
-```sh
-python3 -m venv ~/.local/share/atherpro-lab/venv
-~/.local/share/atherpro-lab/venv/bin/python -m pip install websocket-client
-~/.local/share/atherpro-lab/venv/bin/python scripts/ather-lab.py monitor
-```
+Monitoring requires `websocket-client`. The setup above installs it in a virtual
+environment outside the checkout. Activate that environment in each terminal,
+or use `../.venv-ather-lab/bin/python` explicitly.
 
 ```sh
 python3 scripts/ather-lab.py monitor --seconds 60
@@ -70,6 +67,7 @@ best-effort redaction, so keep captures private rather than uploading them.
 The latest redacted REST response is saved as `last-response.json`; captures
 append to `monitor.jsonl`. Both live alongside the session outside Git.
 Unavailable APIs return their HTTP status without dumping response bodies.
+The optional charging-command diagnostics below also save redacted error bodies.
 An expired token requires OTP login again; there is no automatic refresh.
 
 ## Test charging
@@ -89,9 +87,68 @@ python3 scripts/ather-lab.py start --execute
 ```
 
 These post the exact desired-shadow payload used by `AtherApiClient.kt`.
-There are no automatic command retries. A successful HTTP response means the
-API accepted the request. Verify the subsequent reported charging status,
-heartbeat, and vehicle state in monitoring before treating it as executed.
+There are no automatic command retries. An HTTP success response alone does not
+establish application-level acceptance or execution. Verify the response body,
+subsequent reported charging status, heartbeat, and physical charger behaviour.
+
+### Supervised 450S stop-command capture
+
+This experiment isolates manual Pause from the phone's automatic limiter. Keep
+the scooter parked and charging, disable the Athr+ charge limit, and have someone
+observe the charger. Do not run `charge-limit.py` during this test. Sign in using
+the hidden local prompts above; never paste an OTP or session file into chat.
+
+In terminal 1, from the project root, capture telemetry for three minutes:
+
+```sh
+../.venv-ather-lab/bin/python scripts/ather-lab.py monitor --seconds 180 --capture
+```
+
+Wait for the initial charging report. In terminal 2, also from the project root,
+preview the stop command, then send exactly one request:
+
+```sh
+../.venv-ather-lab/bin/python scripts/ather-lab.py stop --diagnostics
+../.venv-ather-lab/bin/python scripts/ather-lab.py stop --execute --diagnostics
+```
+
+`--diagnostics` never implies `--execute`: the first command sends nothing and
+writes no diagnostic capture. The flag is also available for `start`, but do not
+send a start/resume or another stop during this observation. Watch the physical
+charger and scooter for at least two minutes after the stop request; note whether
+charging continues, stops, or stops and restarts, and the observation time.
+
+Diagnostics overwrite `~/.local/share/atherpro-lab/command-response.json` with
+the latest diagnostic command. A pending record is saved before dispatch; if
+private storage cannot be written, no command is sent. The final record contains:
+
+- `requested_at` and `finished_at` in UTC, plus `command_timestamp_ms` matching
+  the timestamp in the command payload, and the requested `action`.
+- `http_status` (null when no status arrived), `outcome`, and `response_body`.
+- `body_format`: `json` or `text` when a nonempty body was received. Empty or
+  unreadable bodies remain null; connection/read failures are recorded without
+  raw exception text. A pending record can remain if the process is killed.
+
+HTTP errors retain their failure exit status. Non-JSON responses are captured
+but still fail the tool's JSON contract, even with HTTP 2xx. JSON bodies are
+preserved without guessing the meaning of undocumented error fields; a 2xx with
+an error body is not proof of acceptance. If final persistence fails after sending,
+the tool warns that the command may have been sent: do not blindly retry.
+
+The capture contains no request/response headers, URL, or authentication payload.
+Sensitive JSON fields, known session/vehicle values and JWTs are redacted. Free
+text containing private-field or authentication markers is suppressed entirely,
+including multi-line text, rather than risking a partial credential leak.
+Redaction is best-effort; keep both captures private and review before sharing.
+The file uses the same private storage permissions as the session and is removed
+by `logout`. Git ignores it and the secret guard blocks accidental staging.
+
+Compare `command-response.json` with `monitor.jsonl` and the physical observation.
+Telemetry receive times are UTC (add 5 hours 30 minutes for IST); they are not
+necessarily scooter measurement times. A desired `action: stop` echo alone is
+not confirmation. Missing reports leave execution unknown; continued physical
+charging establishes that no sustained cutoff was observed. Preserve this
+capture before another diagnostic command overwrites it.
 
 For a one-time automatic stop at a chosen percentage, run:
 

@@ -9,6 +9,10 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import android.content.Intent
+import android.provider.Settings
+import io.ather.pro.util.ChargingNotificationManager
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -33,6 +37,8 @@ fun ChargeLimitCard(
     onRetry: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val alertOnly = dashboard.chargeAlertOnly || snapshot.alertOnly
     var selected by rememberSaveable(snapshot.percent) { mutableIntStateOf(snapshot.percent) }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) { while (true) { delay(1_000); now = System.currentTimeMillis() } }
@@ -60,7 +66,7 @@ fun ChargeLimitCard(
     val pending = snapshot.status == ChargeLimitController.Status.PENDING
     val status = when (snapshot.status) {
         ChargeLimitController.Status.DISABLED -> "Off"
-        ChargeLimitController.Status.MONITORING -> "Monitoring"
+        ChargeLimitController.Status.MONITORING -> if (alertOnly && !snapshot.armed) "Target reached" else "Monitoring"
         ChargeLimitController.Status.PENDING -> "Confirming stop…"
         ChargeLimitController.Status.CONFIRMED -> "Stop confirmed"
         ChargeLimitController.Status.ERROR -> "Needs attention"
@@ -69,14 +75,17 @@ fun ChargeLimitCard(
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("Charge limit", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(if (alertOnly) "Charge target alert" else "Charge limit", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text(if (snapshot.enabled) "${snapshot.percent}% · $status" else status,
                         style = MaterialTheme.typography.bodySmall,
                         color = if (snapshot.status == ChargeLimitController.Status.ERROR) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary)
                 }
                 if (snapshot.enabled) TextButton(onClick = { onEnabledChange(false) }) { Text("Turn off") }
             }
-            Text("Stop at $selected%", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            if (alertOnly) Text(
+                "Remote charging control is not supported on the 450S. This alert will not stop charging. Unplug manually.",
+                style = MaterialTheme.typography.bodySmall)
+            Text(if (alertOnly) "Notify at $selected%" else "Stop at $selected%", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Slider(value = selected.toFloat(), onValueChange = { selected = it.roundToInt() },
                 valueRange = ChargeLimitController.MIN_PERCENT.toFloat()..ChargeLimitController.MAX_PERCENT.toFloat(),
                 steps = ChargeLimitController.MAX_PERCENT - ChargeLimitController.MIN_PERCENT - 1,
@@ -86,7 +95,7 @@ fun ChargeLimitCard(
                     FilterChip(selected = selected == target, onClick = { selected = target }, label = { Text("$target%") })
                 }
             }
-            Surface(color = MaterialTheme.colorScheme.primaryContainer,
+            if (!alertOnly) Surface(color = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer, shape = RoundedCornerShape(16.dp)) {
                 Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (estimate != null) {
@@ -112,15 +121,25 @@ fun ChargeLimitCard(
             }
             Button(onClick = { onPercentChange(selected, snapshot.chargerPowerW) }, modifier = Modifier.fillMaxWidth(),
                 enabled = !pending && (!snapshot.enabled || unapplied)) {
-                Text(if (snapshot.enabled) "Apply $selected%" else "Enable limit")
+                Text(if (snapshot.enabled) "Apply $selected%" else if (alertOnly) "Enable alert" else "Enable limit")
             }
             if (snapshot.enabled && unapplied) Text("New target has not been applied.", style = MaterialTheme.typography.bodySmall)
-            if (snapshot.status == ChargeLimitController.Status.ERROR) {
+            if (alertOnly && snapshot.status == ChargeLimitController.Status.ERROR) {
+                Text("Could not save alert. Turn it off and enable it again.", color = MaterialTheme.colorScheme.error)
+            }
+            if (!alertOnly && snapshot.status == ChargeLimitController.Status.ERROR) {
                 Text("Stop not confirmed · check scooter", color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall)
                 OutlinedButton(onClick = onRetry) { Text("Retry stop") }
             }
-            if (snapshot.enabled) Text("5 sec checks · keep phone online",
+            if (alertOnly) Text("Allow Charging Alerts notifications in Android settings and keep monitoring active. Delayed scooter data or an offline phone can delay or prevent the alert.",
+                style = MaterialTheme.typography.bodySmall)
+            if (alertOnly) TextButton(onClick = {
+                context.startActivity(Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+                    .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                    .putExtra(Settings.EXTRA_CHANNEL_ID, ChargingNotificationManager.CHANNEL_ALERTS_ID))
+            }) { Text("Charging alert settings") }
+            if (snapshot.enabled) Text(if (alertOnly) "Alerts use fresh reported battery readings" else "5 sec checks · keep phone online",
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

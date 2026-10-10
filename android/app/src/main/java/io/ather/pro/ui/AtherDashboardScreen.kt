@@ -34,7 +34,7 @@ fun AtherDashboardScreen(
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 FilledTonalButton(onClick = onOpenCharging, modifier = Modifier.weight(1f)) {
-                    Text(if (chargeLimit.enabled) "Limit ${chargeLimit.percent}%" else "Manage charging")
+                    Text(if (chargeLimit.enabled) "${if (dashboard.chargeAlertOnly || chargeLimit.alertOnly) "Alert" else "Limit"} ${chargeLimit.percent}%" else "Manage charging")
                 }
                 OutlinedButton(onClick = onOpenMap, modifier = Modifier.weight(1f)) { Text("Find scooter") }
             }

@@ -4,6 +4,7 @@
 import argparse
 import base64
 import getpass
+from http.client import HTTPException
 import json
 import os
 from pathlib import Path
@@ -96,22 +97,58 @@ def headers(token=None):
     return result
 
 
-def request(path, token=None, payload=None, query=None):
+def request(path, token=None, payload=None, query=None, *, diagnostics=False):
     url = BASE + path + ("?" + urlencode(query) if query else "")
     body = json.dumps(payload).encode() if payload is not None else None
     request_headers = headers(token)
     request_headers["X-Request-Source"] = "ATHER_APP"
     req = Request(url, data=body, headers=request_headers)
+    record = None
+    raw = b""
+    if diagnostics:
+        command = payload["state"]["desired"]["remote_charging"]
+        record = {"requested_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                  "command_timestamp_ms": command["timestamp"], "action": command["action"],
+                  "http_status": None, "response_body": None, "outcome": "pending"}
+        # Verify private storage works before sending a physical command.
+        save_private("command-response.json", record)
     try:
-        with build_opener(NoRedirect()).open(req, timeout=30) as response:
-            raw = response.read()
-    except HTTPError as error:
-        # Response bodies may echo credentials; never print them.
-        if error.code in (401, 403):
-            raise LabError(f"HTTP {error.code}: sign-in expired or access denied.") from None
-        raise LabError(f"Ather API returned HTTP {error.code}.") from None
-    except (URLError, TimeoutError, OSError):
+        try:
+            with build_opener(NoRedirect()).open(req, timeout=30) as response:
+                if record is not None:
+                    record["http_status"] = response.status
+                raw = response.read()
+        except HTTPError as error:
+            with error:
+                if record is not None:
+                    record["http_status"] = error.code
+                    raw = error.read()
+            if error.code in (401, 403):
+                raise LabError(f"HTTP {error.code}: sign-in expired or access denied.") from None
+            raise LabError(f"Ather API returned HTTP {error.code}.") from None
+    except (URLError, TimeoutError, OSError, HTTPException):
+        if record is not None:
+            record["outcome"] = "connection_or_read_failure"
         raise LabError("Ather API connection failed or timed out.") from None
+    finally:
+        if record is not None:
+            record["finished_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            if record["outcome"] == "pending":
+                record["outcome"] = "http_response" if record["http_status"] is not None else "no_response"
+            if raw:
+                text = raw.decode("utf-8", errors="replace")
+                try:
+                    value = json.loads(text)
+                    record["body_format"] = "json"
+                except ValueError:
+                    value = text
+                    record["body_format"] = "text"
+                record["response_body"] = redact_diagnostic(value, (token, (query or {}).get("uuid")))
+            try:
+                save_private("command-response.json", record)
+            except OSError:
+                raise LabError("Command may have been sent, but saving diagnostics failed. Check the scooter before retrying.") from None
+            print("Diagnostics saved privately to command-response.json; execution remains unconfirmed.")
     try:
         return json.loads(raw) if raw.strip() else {}
     except ValueError:
@@ -160,6 +197,20 @@ def redact(value, secrets=()):
             if secret:
                 value = value.replace(secret, "[redacted]")
         return JWT.sub("[redacted]", value)
+    return value
+
+
+def redact_diagnostic(value, secrets):
+    """Keep structured errors; suppress free text that may echo private fields."""
+    if isinstance(value, dict):
+        return {redact(key, secrets): "[redacted]" if PRIVATE_KEYS.search(key)
+                else redact_diagnostic(item, secrets) for key, item in value.items()}
+    if isinstance(value, list):
+        return [redact_diagnostic(item, secrets) for item in value]
+    if isinstance(value, str):
+        if PRIVATE_KEYS.search(value) or re.search(r"\b(?:Bearer|Basic)\s+\S+", value, re.I):
+            return "[redacted]"
+        return redact(value, secrets)
     return value
 
 
@@ -313,9 +364,10 @@ def main():
     for action in ("start", "stop"):
         command = commands.add_parser(action)
         command.add_argument("--execute", action="store_true", help="Send the real scooter command")
+        command.add_argument("--diagnostics", action="store_true", help="Save a private redacted HTTP response when executing")
     args = parser.parse_args()
     if args.command == "logout":
-        for name in ("session.json", "pending-login.json", "last-response.json", "monitor.jsonl"):
+        for name in ("session.json", "pending-login.json", "last-response.json", "monitor.jsonl", "command-response.json"):
             (private_directory() / name).unlink(missing_ok=True)
         print("Local credentials and captures deleted. This does not revoke the token on Ather's server.")
         return
@@ -348,8 +400,9 @@ def main():
             print("Preview only. Add --execute to send this command to your scooter.")
             print(json.dumps(redact(payload, (uuid,)), indent=2))
             return
-        request("/api/v1/devices/shadows/scooters", data["token"], payload, {"uuid": uuid})
-        print(f"{args.command.capitalize()} request accepted by API. Scooter execution is unconfirmed; check monitor.")
+        request("/api/v1/devices/shadows/scooters", data["token"], payload, {"uuid": uuid},
+                diagnostics=args.diagnostics)
+        print(f"{args.command.capitalize()} request received an HTTP success response. Scooter execution is unconfirmed; check monitor.")
     elif args.command in ("profile", "health"):
         path = "/api/v1/devices/shadows/scooters/properties" if args.command == "profile" else "/api/v1/vehicle-health/report"
         query = {"uuid": require_vehicle(data)}
