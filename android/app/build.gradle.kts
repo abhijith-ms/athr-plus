@@ -43,6 +43,8 @@ android {
             )
         }
         debug {
+            applicationIdSuffix = ".test450s"
+            versionNameSuffix = "-450s-test"
             isMinifyEnabled = false
         }
     }

@@ -50,6 +50,10 @@ class GithubAppUpdateRepository private constructor(private val context: Context
     override val state = mutableState.asStateFlow()
 
     override suspend fun check(force: Boolean) = withContext(Dispatchers.IO) {
+        if (BuildConfig.DEBUG) {
+            mutableState.update { it.copy(error = "Test build: install updates from your fork.") }
+            return@withContext
+        }
         if (!lock.tryLock()) return@withContext
         try {
             val now = System.currentTimeMillis()

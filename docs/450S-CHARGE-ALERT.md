@@ -23,3 +23,7 @@ These phone checks are still required; desktop unit tests cannot verify Android 
 ## Desktop verification
 
 The Android sources compiled and all 213 JVM unit tests passed, including target threshold, stale/invalid readings, duplicate suppression, fresh-unplug rearming, legacy-setting migration, widget/notification wording, and repository-level command blocking. Command: `./gradlew :app:testDebugUnitTest -x buildRust` with Java 17 and Android SDK 34. The native Rust build was excluded; no installable APK or on-phone notification test was produced by this check.
+
+## Test APK
+
+The debug build installs as **Athr+ 450S Test** (`io.ather.pro.test450s`), alongside the original app. It has separate settings and requires a fresh local login. Its upstream update check is disabled. GitHub's test workflow runs the unit tests, builds all four native Android architectures, and uploads the APK as the `athr-plus-450s-test` artifact. This is a debug-signed test build, not a publisher-signed release; different CI builds may have different signing keys and require uninstalling the earlier test app before installation.

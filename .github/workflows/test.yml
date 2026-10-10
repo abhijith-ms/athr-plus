@@ -1,4 +1,4 @@
-name: Unit tests
+name: Test APK and unit tests
 on:
   push:
   pull_request:
@@ -24,5 +24,11 @@ jobs:
         run: sdkmanager 'platforms;android-34' 'build-tools;34.0.0' 'ndk;26.1.10909125'
       - name: Install Rust Android targets
         run: rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android i686-linux-android
-      - name: Run unit tests
-        run: ./android/gradlew -p android :app:testDebugUnitTest --console=plain
+      - name: Run unit tests and build test APK
+        run: ./android/gradlew -p android :app:testDebugUnitTest :app:assembleDebug --console=plain
+      - uses: actions/upload-artifact@v4
+        with:
+          name: athr-plus-450s-test
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
