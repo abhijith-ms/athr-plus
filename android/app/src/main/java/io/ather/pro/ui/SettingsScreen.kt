@@ -72,6 +72,7 @@ internal fun SettingsScreen(
     LazyColumn(contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item { AppUpdateCard(updateState, onCheckUpdate, onOpenUpdate) }
         item { MonitoringCard(monitoring, limitEnabled, onMonitoringChange) }
+        if (BuildConfig.DEBUG) item { MediaProbeCard() }
         item {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
