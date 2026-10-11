@@ -10,6 +10,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import io.ather.pro.util.MediaProbe
+import io.ather.pro.domain.media.MediaProbeState.Source
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -34,6 +35,7 @@ internal fun MediaProbeCard() {
             Text("Test while parked with the scooter paired. Starting may pause other music. Uses silent playback; keep this screen open. Leaving stops the test.",
                 style = MaterialTheme.typography.bodySmall)
             Text(state.status)
+            Text(state.notificationStatus, style = MaterialTheme.typography.bodySmall)
             Text(state.title, style = MaterialTheme.typography.titleLarge)
             Text("Artist: 450S PROBE · ${if (state.playing) "Playing" else "Paused"}")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -42,11 +44,14 @@ internal fun MediaProbeCard() {
                 }
                 OutlinedButton(onClick = { probe.nextTitle() }, enabled = state.active) { Text("Next title") }
             }
-            Text("Check the song title on the scooter. Try joystick play/pause and next/previous. A received media command does not identify which device sent it.",
+            OutlinedButton(onClick = { probe.androidNext() }, enabled = state.active) { Text("Android next") }
+            Text("Android next checks the phone’s media controller. Expect NEXT from Local Android controller (or Media callback on Android 8). Check the media notification too before testing the scooter.",
                 style = MaterialTheme.typography.bodySmall)
-            if (state.events.none { it.remote }) Text("No media commands received yet.", style = MaterialTheme.typography.bodySmall)
+            Text("Check the song title on the scooter. Try joystick play/pause and next/previous. Callback labels identify the Android caller, not the physical button. Notification buttons use the local controller.",
+                style = MaterialTheme.typography.bodySmall)
+            if (state.events.none { it.source != Source.PHONE_BUTTON }) Text("No Android media callbacks received yet.", style = MaterialTheme.typography.bodySmall)
             state.events.asReversed().forEach { event ->
-                Text("${time.format(Date(event.atMs))} · ${if (event.remote) "Media command" else "Phone button"}: ${event.command}",
+                Text("${time.format(Date(event.atMs))} · ${event.source.label}: ${event.command}",
                     style = MaterialTheme.typography.bodySmall)
             }
         }

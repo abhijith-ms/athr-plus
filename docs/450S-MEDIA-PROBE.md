@@ -9,10 +9,11 @@ The debug test app includes **Settings → 450S media test**. It publishes an An
 1. Update the current Athr+ 450S Test installation. Pair normally and confirm ordinary music metadata works first.
 2. Pause your normal music. Keep the official Ather app available as usual; do not force-stop it for the first test.
 3. Open Settings → 450S media test and tap **Start test**. Keep this card visible and the phone unlocked.
-4. Check whether the dashboard song title becomes `ATHR TEST 001` and the artist becomes `450S PROBE`. Record the actual dashboard result; “Session active on phone” confirms only local activation.
-5. Tap **Next title** twice. Check whether the dashboard changes to `002`, then `003`. Phone button events are labelled separately from received media commands.
-6. Use the scooter joystick for next/previous and play/pause. Check the phone event list and dashboard title/playback state. Avoid other headphones, watches, or media controls during the test: Android callbacks do not identify the physical sender.
-7. Tap **Stop test**, then resume your normal player. Leaving the card, changing tabs, or backgrounding the app releases playback, audio focus, and the session. Stop also occurs on audio focus loss, including an incoming call. Events are kept only in memory, up to 20; restarting the test resets them.
+4. Check that the card says **Media notification registered with Android** and that an Athr+ music notification appears in the phone notification shade. Tap **Android next** on the card: the title should advance and a `NEXT` callback should appear from **Local Android controller** (or **Media callback** on Android 8). This uses the actual session controller, whereas Next title changes local state directly.
+5. Open the scooter's music controls using the usual joystick action. Check whether the dashboard song title matches the phone and the artist becomes `450S PROBE`. Record the actual dashboard result; “Session active on phone” confirms only local activation.
+6. Tap **Next title** twice. Check whether the dashboard follows the two title changes. Phone button events are labelled separately from received media callbacks.
+7. Use the scooter joystick for next/previous and play/pause. Check the phone event list and dashboard title/playback state. Avoid other headphones, watches, notification buttons, or media controls during this step: Android callbacks identify the controller application on Android 9+, not the physical sender. Commands forwarded through our media-button receiver show as Local Android controller too.
+8. Tap **Stop test**, then resume your normal player. Leaving the card, changing tabs, or backgrounding the app releases playback, audio focus, and the session, and removes the media notification. Stop also occurs on audio focus loss, including an incoming call. Events are kept only in memory, up to 20; restarting the test resets them.
 
 If text freezes naturally, compare whether joystick commands still appear on the phone. Record observations before a normal key off/on recovery. Do not manufacture call notifications or change permissions for this experiment.
 
@@ -27,3 +28,13 @@ This is not navigation, a call-notification fix, or a freeze workaround. It inte
 Desktop tests check command transitions, paused metadata changes, stopped-session protection, title wraparound, and bounded event history. Android selection, actual dashboard text, joystick delivery, and audio-focus recovery require the phone test.
 
 The local 1.1.19-450s-test APK (version code 22) built successfully with all 222 JVM tests passing. Its signature matches the prior local test APK. The four unchanged Rust libraries were reused and compared with the prior APK; Rust was not rebuilt.
+
+## First phone result and revised probe
+
+The rider's 1.1.19 screenshot shows locally changing titles and no media callbacks; the scooter photo shows its trip screen. Starting the regular phone player restored normal music display. That result does not establish that custom metadata is unsupported, nor does it locate the failure.
+
+The revised probe adds a standard [MediaStyle notification linked to the session](https://developer.android.com/reference/android/app/Notification.MediaStyle), a session launch intent, a one-item queue, and a declared media-button receiver. The receiver forwards only to an already running test and cannot start it in the background. An Android-controller check and notification registration status provide local evidence before another scooter test. This setup was compared with the public [Ather-Nav media service](https://github.com/ghanshyam-pal/Ather-Nav/blob/main/app/src/main/java/com/athernav/app/MediaSessionService.java); that project's comments and compatibility claims are not proof of support on this scooter. No code or APK from it is installed or executed.
+
+If the notification and Android controller work but the scooter still shows no test title or forwards no commands, record the result alongside a working regular-player baseline. Stop changing the probe blindly; inspect a short, local Bluetooth capture or Android media-session diagnostic next. Do not publish a raw phone bugreport or Bluetooth log: either can contain personal information.
+
+The revised local 1.1.20-450s-test APK (version code 23) compiled and passed all 223 JVM tests. APK signature verification confirms it can update the previous local test build. The receiver is declared as non-exported in the merged manifest. All four unchanged native libraries match the previous APK; physical notification, callback, and scooter checks remain pending.

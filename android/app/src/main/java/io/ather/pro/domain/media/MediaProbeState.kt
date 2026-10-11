@@ -5,13 +5,17 @@ data class MediaProbeState(
     val playing: Boolean = false,
     val track: Int = 1,
     val events: List<Event> = emptyList(),
-    val status: String = "Not started"
+    val status: String = "Not started",
+    val notificationStatus: String = "Media notification not posted"
 ) {
     enum class Command { PLAY, PAUSE, NEXT, PREVIOUS, STOP }
-    data class Event(val atMs: Long, val command: Command, val remote: Boolean)
+    enum class Source(val label: String) {
+        PHONE_BUTTON("Phone button"), ANDROID_CONTROLLER("Local Android controller"), MEDIA_CALLBACK("Media callback")
+    }
+    data class Event(val atMs: Long, val command: Command, val source: Source)
     val title: String get() = "ATHR TEST ${track.toString().padStart(3, '0')}"
 
-    fun receive(command: Command, atMs: Long, remote: Boolean = true): MediaProbeState {
+    fun receive(command: Command, atMs: Long, source: Source = Source.MEDIA_CALLBACK): MediaProbeState {
         if (!active) return this
         return copy(
             active = command != Command.STOP,
@@ -25,7 +29,7 @@ data class MediaProbeState(
                 Command.PREVIOUS -> if (track == 1) 999 else track - 1
                 else -> track
             },
-            events = (events + Event(atMs, command, remote)).takeLast(20),
+            events = (events + Event(atMs, command, source)).takeLast(20),
             status = if (command == Command.STOP) "Stopped" else "Session active on phone"
         )
     }

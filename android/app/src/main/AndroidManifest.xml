@@ -51,6 +51,12 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <receiver android:name=".util.MediaProbeButtonReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
+
         <service android:name="androidx.work.impl.foreground.SystemForegroundService"
             android:foregroundServiceType="dataSync" tools:node="merge" />
 
