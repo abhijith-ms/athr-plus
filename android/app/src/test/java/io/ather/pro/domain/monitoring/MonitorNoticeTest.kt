@@ -29,6 +29,17 @@ class MonitorNoticeTest {
         assertTrue(notice.detail.contains("Charging is stopped"))
     }
 
+    @Test fun targetMonitorShowsBatteryAndSeparateStaleChargingStatus() {
+        val state = dashboard(true, "Charging", 51.0).copy(
+            batteryReportedAt = now, chargingReportedAt = now - 120_000)
+        val notice = MonitorNotice.from(now, state, ChargeLimitController.Snapshot(enabled = true, alertOnly = true, percent = 90, armed = true))
+        assertEquals("Waiting for fresh readings · 51%", notice.title)
+        assertTrue(notice.detail.contains("Alert at 90%"))
+        assertTrue(notice.detail.contains("Battery · 0s ago"))
+        assertTrue(notice.detail.contains("Charging status · 2m ago · stale"))
+        assertNull(notice.countdownToMs)
+    }
+
     private fun dashboard(charging: Boolean, status: String, soc: Double) = ScooterDashboardState(
         connection = ConnectionStatus.CONNECTED,
         lastUpdated = now,

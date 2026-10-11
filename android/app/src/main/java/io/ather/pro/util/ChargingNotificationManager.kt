@@ -12,6 +12,7 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import io.ather.pro.MainActivity
+import io.ather.pro.domain.charging.ChargeAlertEvent
 import io.ather.pro.domain.model.ScooterTelemetry
 import kotlin.math.roundToInt
 
@@ -234,8 +235,11 @@ class ChargingNotificationManager private constructor(private val context: Conte
         notificationManager.notify(NOTIFICATION_ID_PROGRESS, notification)
     }
 
-    fun postTargetAlert(percent: Int) {
-        if (!hasNotificationPermission()) return
+    fun postTargetAlert(percent: Int): ChargeAlertEvent.Kind {
+        if (!hasNotificationPermission() || !notificationManager.areNotificationsEnabled() ||
+            notificationManager.getNotificationChannel(CHANNEL_ALERTS_ID)?.importance == NotificationManager.IMPORTANCE_NONE) {
+            return ChargeAlertEvent.Kind.BLOCKED
+        }
         val notification = NotificationCompat.Builder(appContext, CHANNEL_ALERTS_ID)
             .setSmallIcon(android.R.drawable.ic_lock_idle_charging)
             .setContentTitle("Athr+ — $percent% target reached")
@@ -246,7 +250,12 @@ class ChargingNotificationManager private constructor(private val context: Conte
             .setContentIntent(createDashboardPendingIntent(NOTIFICATION_ID_TARGET))
             .setAutoCancel(true)
             .build()
-        notificationManager.notify(NOTIFICATION_ID_TARGET, notification)
+        return try {
+            notificationManager.notify(NOTIFICATION_ID_TARGET, notification)
+            ChargeAlertEvent.Kind.POSTED
+        } catch (_: RuntimeException) {
+            ChargeAlertEvent.Kind.FAILED
+        }
     }
 
     private fun postAlert80Notification() {

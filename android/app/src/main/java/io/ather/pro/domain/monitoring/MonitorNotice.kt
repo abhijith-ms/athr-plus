@@ -24,11 +24,21 @@ data class MonitorNotice(
             val telemetry = state.telemetry
             if (state.chargeAlertOnly || limit.alertOnly) {
                 val soc = telemetry?.batterySoc?.takeIf { it.isFinite() && it in 0.0..100.0 }?.roundToInt()
-                val fresh = ChargeLimitController.isFresh(state.batteryUpdatedAt, nowMs)
-                val title = if (state.connection != ConnectionStatus.CONNECTED || !fresh) "Waiting for scooter"
-                    else if (limit.enabled && !limit.armed) "Charge target reached" else "Charge target monitor"
-                val detail = if (limit.enabled) "Alert at ${limit.percent}% · Unplug manually; automatic cutoff unavailable"
-                    else "Charge alert off · Automatic cutoff unavailable on 450S"
+                val batteryAt = ReadingFreshness.batteryAt(state)
+                val chargingAt = ReadingFreshness.chargingAt(state)
+                val fresh = ReadingFreshness.fresh(batteryAt, nowMs) && ReadingFreshness.fresh(chargingAt, nowMs)
+                val socText = soc?.let { " · $it%" }.orEmpty()
+                val title = when {
+                    state.connection != ConnectionStatus.CONNECTED -> "Reconnecting$socText"
+                    !fresh -> "Waiting for fresh readings$socText"
+                    limit.enabled && !limit.armed -> "Charge target reached$socText"
+                    ChargingControl.isActivelyCharging(telemetry) -> "Charging$socText"
+                    else -> "Charge target monitor$socText"
+                }
+                val target = if (limit.enabled) "Alert at ${limit.percent}% · Unplug manually"
+                    else "Charge alert off"
+                val detail = listOf(target, ReadingFreshness.label("Battery", batteryAt, nowMs),
+                    ReadingFreshness.label("Charging status", chargingAt, nowMs)).joinToString("\n")
                 return MonitorNotice(title, detail, soc, null)
             }
             val soc = telemetry?.batterySoc?.takeIf { it.isFinite() && it in 0.0..100.0 }?.roundToInt()

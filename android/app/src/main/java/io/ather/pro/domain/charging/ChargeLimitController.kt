@@ -52,7 +52,8 @@ object ChargeLimitController {
         val learnedPercentPerMinute: Double? = null,
         val learnedMinutes: Double = 0.0,
         val learnedSessions: Int = 0,
-        val alertOnly: Boolean = false
+        val alertOnly: Boolean = false,
+        val alertHistory: List<ChargeAlertEvent> = emptyList()
     )
 
     sealed class Decision {
@@ -75,6 +76,7 @@ object ChargeLimitController {
         if (!enabled) {
             return Snapshot(
                 enabled = false,
+                alertHistory = previous.alertHistory,
                 percent = clamped,
                 status = Status.DISABLED,
                 message = null,
@@ -92,6 +94,7 @@ object ChargeLimitController {
         if (!settingsChanged) return previous
         return Snapshot(
             enabled = true,
+            alertHistory = previous.alertHistory,
             percent = clamped,
             status = Status.MONITORING,
             message = if (settingsChanged) {

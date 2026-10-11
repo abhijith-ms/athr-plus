@@ -63,7 +63,7 @@ class ScooterMonitorService : Service() {
                 val clockTicks = flow {
                     while (isActive) {
                         emit(System.currentTimeMillis())
-                        delay(60_000L)
+                        delay(15_000L)
                     }
                 }
                 combine(appContainer.repository.dashboard, appContainer.repository.chargeLimit, clockTicks) {

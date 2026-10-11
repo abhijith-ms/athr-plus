@@ -37,17 +37,14 @@ internal fun number(value: Double?, decimals: Int = 0): String =
 fun FreshnessLabel(state: ScooterDashboardState, modifier: Modifier = Modifier) {
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(state.lastUpdated) { while (true) { now = System.currentTimeMillis(); delay(15_000) } }
-    val readingAt = state.batteryReportedAt ?: state.telemetry?.sourceTimestampMs ?: state.batteryUpdatedAt ?: state.lastUpdated
-    val age = readingAt?.let { ((now - it).coerceAtLeast(0) / 1000) }
-    val fresh = state.connection == ConnectionStatus.CONNECTED && age != null && age < 60
-    val text = when {
-        fresh -> "Live · Updated ${age}s ago"
-        age != null -> "Last received ${DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(readingAt!!))} · ${if (state.connection == ConnectionStatus.CONNECTED) "Waiting for scooter" else "Reconnecting"}"
-        state.connection == ConnectionStatus.CONNECTING -> "Connecting to your scooter…"
-        else -> "Waiting for scooter data · Tap refresh to retry"
-    }
+    val cloud = if (state.connection == ConnectionStatus.CONNECTED) "Cloud connected" else "Cloud reconnecting"
+    val text = listOf(cloud,
+        io.ather.pro.domain.monitoring.ReadingFreshness.label("Battery",
+            io.ather.pro.domain.monitoring.ReadingFreshness.batteryAt(state), now),
+        io.ather.pro.domain.monitoring.ReadingFreshness.label("Charging status",
+            io.ather.pro.domain.monitoring.ReadingFreshness.chargingAt(state), now)).joinToString("\n")
     Text(text, modifier, style = MaterialTheme.typography.bodySmall,
-        color = if (fresh) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant)
+        color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 @Composable
@@ -58,13 +55,14 @@ fun EnergySummaryCard(state: ScooterDashboardState, limit: ChargeLimitController
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) { while (true) { now = System.currentTimeMillis(); delay(15_000) } }
     val readingAt = state.batteryReportedAt ?: state.telemetry?.sourceTimestampMs ?: state.batteryUpdatedAt
-    val fresh = state.connection == ConnectionStatus.CONNECTED && readingAt != null &&
-        now - readingAt in 0L..120_000L
+    val fresh = state.connection == ConnectionStatus.CONNECTED &&
+        io.ather.pro.domain.monitoring.ReadingFreshness.fresh(readingAt, now)
     val colors = MaterialTheme.colorScheme
     val accent = colors.primary
     val muted = colors.onSurfaceVariant
     val status = when {
-        charging && fresh -> "Charging"
+        charging && fresh && io.ather.pro.domain.monitoring.ReadingFreshness.fresh(
+            io.ather.pro.domain.monitoring.ReadingFreshness.chargingAt(state), now) -> "Charging"
         charging -> "Charging · saved"
         ChargingControl.isPaused(state.telemetry) -> "Paused"
         soc == null -> "Waiting for data"

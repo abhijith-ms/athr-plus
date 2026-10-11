@@ -76,10 +76,10 @@ class ChargeTargetAlertTest {
 
     @Test fun detected450SWinsOverSavedModelAndNoticeNeverClaimsAStop() {
         val state = ScooterDashboardState(vehicleProfile = VehicleProfile(modelType = "450s"),
-            connection = ConnectionStatus.CONNECTED, batteryUpdatedAt = now, telemetry = charging(90.0))
+            connection = ConnectionStatus.CONNECTED, batteryUpdatedAt = now, chargingUpdatedAt = now, telemetry = charging(90.0))
         assertTrue(state.chargeAlertOnly)
         val notice = MonitorNotice.from(now, state, observe().next)
-        assertEquals("Charge target reached", notice.title)
+        assertEquals("Charge target reached · 90%", notice.title)
         assertTrue(notice.detail.contains("Unplug manually"))
         assertNull(notice.countdownToMs)
         val widget = io.ather.pro.widget.DashboardWidgetSnapshot.fromDashboard(state, observe().next)

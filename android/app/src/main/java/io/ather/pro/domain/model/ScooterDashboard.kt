@@ -333,7 +333,8 @@ data class ScooterDashboardState(
     val telemetryHistory: List<TelemetrySample> = emptyList(),
     val rideHistory: List<io.ather.pro.domain.battery.RideSample> = emptyList(),
     val vehicleProfile: VehicleProfile? = null,
-    val remoteChargingCommand: RemoteChargingCommand = RemoteChargingCommand()
+    val remoteChargingCommand: RemoteChargingCommand = RemoteChargingCommand(),
+    val chargingReportedAt: Long? = null
 ) {
     /** Remote charging control is not offered on the 450S. */
     val chargeAlertOnly: Boolean

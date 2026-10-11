@@ -27,3 +27,15 @@ The Android sources compiled and all 213 JVM unit tests passed, including target
 ## Test APK
 
 The debug build installs as **Athr+ 450S Test** (`io.ather.pro.test450s`), alongside the original app. It has separate settings and requires a fresh local login. Its upstream update check is disabled. GitHub's test workflow runs the unit tests, builds all four native Android architectures, and uploads the APK as the `athr-plus-450s-test` artifact. This is a debug-signed test build, not a publisher-signed release; different CI builds may have different signing keys and require uninstalling the earlier test app before installation.
+
+## Charging visibility update (11 October 2026)
+
+The rider confirmed the first target notification was received on the phone. The next test build separates the cloud connection from battery and charging report ages on the dashboard and in the ongoing notification. GPS packets cannot make these reports look fresh. Missing and future timestamps are explicitly labelled.
+
+Expand **Alert history** on the charging card to inspect the last 40 local events for the selected scooter. Battery reports are sampled at most once every five minutes, with duplicate source timestamps omitted. Target changes, target reached, and Android notification submission outcomes are recorded separately. History contains only timestamps, percentages, and fixed event types, and survives restarting the app and disabling the alert. It contains no login tokens, phone numbers, VINs, or GPS coordinates. A successful notification submission does not prove visible delivery; Android settings and background restrictions still matter.
+
+Bluetooth navigation and display experiments have not started.
+
+The local 1.1.18-450s-test build (version code 21) passed all 220 JVM unit tests and APK signature verification. It uses the same signing certificate as the local 1.1.17 test APK, allowing an update without uninstalling. All four unchanged native libraries were reused and checked against the previous APK; Rust was not rebuilt.
+
+For this update, check the separate report ages on Home and the ongoing notification, expand Alert history after a supervised target alert, and restart the app to check the history remains. These new UI and persistence checks still need phone verification.

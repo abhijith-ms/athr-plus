@@ -30,8 +30,15 @@ class ChargeLimitStore(context: Context) {
         val barrier = if (currentTimingPolicy) prefs.getLong("${vehicleUuid}_estimate_barrier", -1L)
             .takeIf { it > 0 } else null
         val learned = learnedRate(vehicleUuid)
+        val history = runCatching {
+            Gson().fromJson(prefs.getString("${vehicleUuid}_alert_history", "[]"),
+                Array<io.ather.pro.domain.charging.ChargeAlertEvent>::class.java).orEmpty()
+                .filter { it != null && it.kind != null && it.atMs > 0 && it.target in 50..100 &&
+                    (it.soc == null || it.soc.isFinite() && it.soc in 0.0..100.0) }
+                .takeLast(io.ather.pro.domain.charging.ChargeAlertEvent.MAX_EVENTS)
+        }.getOrDefault(emptyList())
         val alertOnly = prefs.getBoolean("${vehicleUuid}_alert_only", false)
-        if (!enabled) return ChargeLimitController.Snapshot(alertOnly = alertOnly, percent = percent, chargerPowerW = power,
+        if (!enabled) return ChargeLimitController.Snapshot(alertHistory = history, alertOnly = alertOnly, percent = percent, chargerPowerW = power,
             estimateBlockedThroughMs = barrier,
             learnedPercentPerMinute = learned.first,
             learnedMinutes = learned.second,
@@ -42,6 +49,7 @@ class ChargeLimitStore(context: Context) {
         return ChargeLimitController.Snapshot(
             enabled = true,
             alertOnly = alertOnly,
+            alertHistory = history,
             percent = percent,
             status = status,
             armed = prefs.getBoolean("${vehicleUuid}_armed", true),
@@ -68,6 +76,7 @@ class ChargeLimitStore(context: Context) {
         return prefs.edit()
             .putBoolean(keyEnabled(vehicleUuid), snapshot.enabled)
             .putBoolean("${vehicleUuid}_alert_only", snapshot.alertOnly)
+            .putString("${vehicleUuid}_alert_history", Gson().toJson(snapshot.alertHistory))
             .putInt(keyPercent(vehicleUuid), ChargeLimitController.clampPercent(snapshot.percent))
             .putString("${vehicleUuid}_status", snapshot.status.name)
             .putBoolean("${vehicleUuid}_armed", snapshot.armed)

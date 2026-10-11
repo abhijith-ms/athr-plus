@@ -10,6 +10,7 @@ import io.ather.pro.data.local.SavedScooterReadingPrefs
 import io.ather.pro.data.local.SavedScooterReadingStore
 import io.ather.pro.data.local.TripBaseline
 import io.ather.pro.domain.charging.ChargingEvidence
+import io.ather.pro.domain.charging.ChargeAlertEvent
 import io.ather.pro.domain.charging.ChargeTargetAlert
 import io.ather.pro.domain.charging.ChargeLimitController
 import io.ather.pro.domain.charging.ChargeLimitSession
@@ -182,7 +183,7 @@ class AtherRepository(
             chargeSession.resetRate()
             _dashboard.update {
                 val cleared = it.copy(vehicleProfile = null, telemetry = null, lastUpdated = null, batteryUpdatedAt = null,
-                    chargingUpdatedAt = null, batteryReportedAt = null, chargingRatePercentPerMinute = null,
+                    chargingUpdatedAt = null, chargingReportedAt = null, batteryReportedAt = null, chargingRatePercentPerMinute = null,
                     chargingRateMinutes = 0.0, gpsUpdatedAt = null,
                     remoteChargingCommand = RemoteChargingCommand())
                 dashboardWithSavedReading(cleared, uuid)
@@ -213,7 +214,7 @@ class AtherRepository(
                 connection = ConnectionStatus.DISCONNECTED,
                 errorMessage = null,
                 telemetry = null,
-                lastUpdated = null, gpsUpdatedAt = null, batteryUpdatedAt = null, chargingUpdatedAt = null,
+                lastUpdated = null, gpsUpdatedAt = null, batteryUpdatedAt = null, chargingUpdatedAt = null, chargingReportedAt = null,
                 batteryReportedAt = null, chargingRatePercentPerMinute = null, chargingRateMinutes = 0.0,
                 vehicleProfile = null,
                 remoteChargingCommand = RemoteChargingCommand()
@@ -495,6 +496,8 @@ class AtherRepository(
                 batteryUpdatedAt = evidence.batteryAt,
                 batteryReportedAt = batterySampleTime ?: it.batteryReportedAt,
                 chargingUpdatedAt = evidence.chargingAt,
+                chargingReportedAt = if (ChargingEvidence.hasChargeReading(rawTelemetry))
+                    rawTelemetry.sourceTimestampMs ?: now.takeUnless { snapshot } else it.chargingReportedAt,
                 gpsUpdatedAt = if (rawTelemetry.gps?.latitude != null && rawTelemetry.gps.longitude != null) now else it.gpsUpdatedAt,
                 recentTrips = updatedTrips,
                 packetCount = currentCount,
@@ -524,12 +527,15 @@ class AtherRepository(
 
     override fun setChargeLimit(enabled: Boolean, percent: Int, chargerPowerW: Int?) {
         scope.launch {
-            updateChargeLimit(if (_dashboard.value.chargeAlertOnly || _chargeLimit.value.alertOnly) {
+            val next = if (_dashboard.value.chargeAlertOnly || _chargeLimit.value.alertOnly) {
                 ChargeTargetAlert.configure(_chargeLimit.value, enabled, percent)
             } else {
                 ChargeLimitController.applySettings(_chargeLimit.value, enabled, percent,
                     chargerPowerW ?: _chargeLimit.value.chargerPowerW)
-            })
+            }
+            val configured = if (next.alertOnly) ChargeAlertEvent.record(next, ChargeAlertEvent(clock(),
+                if (enabled) ChargeAlertEvent.Kind.ENABLED else ChargeAlertEvent.Kind.DISABLED, next.percent)) else next
+            updateChargeLimit(configured)
             processChargeLimit(clock())
         }
     }
@@ -570,11 +576,21 @@ class AtherRepository(
         val dashboard = _dashboard.value
         if (dashboard.chargeAlertOnly || _chargeLimit.value.alertOnly) {
             val previous = _chargeLimit.value
-            val decision = ChargeTargetAlert.observe(ChargeTargetAlert.migrate(previous), dashboard.telemetry,
+            var monitored = ChargeTargetAlert.migrate(previous)
+            val soc = dashboard.telemetry?.batterySoc?.takeIf { it.isFinite() && it in 0.0..100.0 }
+            if (monitored.enabled && soc != null && dashboard.batteryReportedAt != null) {
+                monitored = ChargeAlertEvent.record(monitored, ChargeAlertEvent(nowMs,
+                    ChargeAlertEvent.Kind.READING, monitored.percent, soc, dashboard.batteryReportedAt))
+            }
+            val decision = ChargeTargetAlert.observe(monitored, dashboard.telemetry,
                 evidence.batteryAt, evidence.chargingAt, nowMs)
-            if (decision.next != previous && updateChargeLimit(decision.next) && decision.notify) {
-                appContext?.let { io.ather.pro.util.ChargingNotificationManager.getInstance(it)
-                    .postTargetAlert(decision.next.percent) }
+            val next = if (decision.notify) ChargeAlertEvent.record(decision.next, ChargeAlertEvent(nowMs,
+                ChargeAlertEvent.Kind.TARGET_REACHED, decision.next.percent, soc, dashboard.batteryReportedAt)) else decision.next
+            if (next != previous && updateChargeLimit(next) && decision.notify) {
+                val outcome = appContext?.let { io.ather.pro.util.ChargingNotificationManager.getInstance(it)
+                    .postTargetAlert(next.percent) }
+                if (outcome != null) updateChargeLimit(ChargeAlertEvent.record(_chargeLimit.value,
+                    ChargeAlertEvent(clock(), outcome, next.percent)))
             }
             return
         }

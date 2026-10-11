@@ -40,10 +40,29 @@ class ChargeLimitSnapshotTest {
         now += 1
         cloud.snapshot(89.0, "Charging", now)
         assertFalse(repository.chargeLimit.value.armed)
+        val history = repository.chargeLimit.value.alertHistory
+        assertTrue(history.any { it.kind == io.ather.pro.domain.charging.ChargeAlertEvent.Kind.ENABLED })
+        assertTrue(history.any { it.kind == io.ather.pro.domain.charging.ChargeAlertEvent.Kind.TARGET_REACHED })
+        assertEquals(now, repository.dashboard.value.chargingReportedAt)
+        val chargingReportedAt = now
+        now += 1
+        cloud.receive("""{"telemetry.bike.gps_location":{"latitude":12.0,"longitude":77.0}}""")
+        assertEquals(chargingReportedAt, repository.dashboard.value.chargingReportedAt)
         repository.retryChargeLimit()
         repeat(5) { refresh(); cloud.snapshot(90.0, "Charging", now) }
         assertTrue(cloud.commands.isEmpty())
         assertEquals(ChargeLimitController.Status.MONITORING, repository.chargeLimit.value.status)
+    }
+
+    @Test fun initialChargingSnapshotWithoutSourceTimeIsNotFresh() {
+        repository.applyCredentials("test-token", "test-vehicle")
+        val packet = """{"telemetry.charging":{"chargingStatus":"Charging","chargerConnected":"On"}}"""
+        cloud.receive(packet)
+        assertNull(repository.dashboard.value.chargingReportedAt)
+        assertNull(repository.dashboard.value.chargingUpdatedAt)
+        now += 1
+        cloud.receive(packet)
+        assertEquals(now, repository.dashboard.value.chargingReportedAt)
     }
 
     @Test fun modelLookupMustFinishBeforeAnyChargingCommand() {

@@ -37,6 +37,7 @@ fun ChargeLimitCard(
     onRetry: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var showHistory by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     val alertOnly = dashboard.chargeAlertOnly || snapshot.alertOnly
     var selected by rememberSaveable(snapshot.percent) { mutableIntStateOf(snapshot.percent) }
@@ -139,6 +140,16 @@ fun ChargeLimitCard(
                     .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
                     .putExtra(Settings.EXTRA_CHANNEL_ID, ChargingNotificationManager.CHANNEL_ALERTS_ID))
             }) { Text("Charging alert settings") }
+            if (alertOnly && snapshot.alertHistory.isNotEmpty()) {
+                TextButton(onClick = { showHistory = !showHistory }) {
+                    Text(if (showHistory) "Hide alert history" else "Alert history (${snapshot.alertHistory.size})")
+                }
+                if (showHistory) snapshot.alertHistory.asReversed().forEach { event ->
+                    Text("${at(event.atMs)} · ${event.label}" +
+                        (event.readingAtMs?.let { " · Reported ${at(it)}" } ?: ""),
+                        style = MaterialTheme.typography.bodySmall)
+                }
+            }
             if (snapshot.enabled) Text(if (alertOnly) "Alerts use fresh reported battery readings" else "5 sec checks · keep phone online",
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
