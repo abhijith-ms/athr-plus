@@ -38,3 +38,9 @@ The revised probe adds a standard [MediaStyle notification linked to the session
 If the notification and Android controller work but the scooter still shows no test title or forwards no commands, record the result alongside a working regular-player baseline. Stop changing the probe blindly; inspect a short, local Bluetooth capture or Android media-session diagnostic next. Do not publish a raw phone bugreport or Bluetooth log: either can contain personal information.
 
 The revised local 1.1.20-450s-test APK (version code 23) compiled and passed all 223 JVM tests. APK signature verification confirms it can update the previous local test build. The receiver is declared as non-exported in the merged manifest. All four unchanged native libraries match the previous APK; physical notification, callback, and scooter checks remain pending.
+
+## Confirmed display path
+
+The rider subsequently supplied photos showing the test title on the 450S display. An initial attempt reportedly disconnected Bluetooth, but the repeat test stayed connected. Playing regular music on the phone then displayed the normal player's title again. This confirms custom media text and return to normal music for that setup; it does not establish the cause of the earlier disconnect, arbitrary joystick access, or longer-session stability.
+
+The next build adds a [navigation preview](450S-NAVIGATION-PREVIEW.md) using the same session. Select **Media test** on the stopped Settings card to repeat the earlier diagnostic; **Navigation demo** is now the default. The prototype retains foreground-only cleanup and requires no new permissions.

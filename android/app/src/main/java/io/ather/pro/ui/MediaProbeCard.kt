@@ -31,23 +31,41 @@ internal fun MediaProbeCard() {
     }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("450S media test", style = MaterialTheme.typography.titleMedium)
-            Text("Test while parked with the scooter paired. Starting may pause other music. Uses silent playback; keep this screen open. Leaving stops the test.",
+            Text(if (state.navigationPreview) "450S navigation preview" else "450S media test",
+                style = MaterialTheme.typography.titleMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = state.navigationPreview, enabled = !state.active,
+                    onClick = { probe.selectNavigationPreview(true) }, label = { Text("Navigation demo") })
+                FilterChip(selected = !state.navigationPreview, enabled = !state.active,
+                    onClick = { probe.selectNavigationPreview(false) }, label = { Text("Media test") })
+            }
+            if (state.navigationPreview) Text("Sample directions only. No real route or location.",
+                color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodyMedium)
+            Text("Test while parked with the scooter paired. Starting may pause other music. Keep this screen open and phone unlocked. Leaving stops the test.",
                 style = MaterialTheme.typography.bodySmall)
             Text(state.status)
             Text(state.notificationStatus, style = MaterialTheme.typography.bodySmall)
             Text(state.title, style = MaterialTheme.typography.titleLarge)
-            Text("Artist: 450S PROBE · ${if (state.playing) "Playing" else "Paused"}")
+            state.instruction?.let {
+                Text("Sample ${state.track} of ${io.ather.pro.domain.media.MediaProbeState.NAVIGATION_STEPS.size} · $it")
+            }
+            Text("Artist: ${state.artist} · ${if (state.playing) "Playing" else "Paused"}")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { if (state.active) probe.stop() else probe.start() }) {
-                    Text(if (state.active) "Stop test" else "Start test")
+                    Text(if (state.active) "Stop test" else if (state.navigationPreview) "Start preview" else "Start test")
                 }
-                OutlinedButton(onClick = { probe.nextTitle() }, enabled = state.active) { Text("Next title") }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { probe.previousTitle() }, enabled = state.active) { Text("Previous") }
+                OutlinedButton(onClick = { probe.nextTitle() }, enabled = state.active) { Text("Next") }
             }
             OutlinedButton(onClick = { probe.androidNext() }, enabled = state.active) { Text("Android next") }
             Text("Android next checks the phone’s media controller. Expect NEXT from Local Android controller (or Media callback on Android 8). Check the media notification too before testing the scooter.",
                 style = MaterialTheme.typography.bodySmall)
-            Text("Check the song title on the scooter. Try joystick play/pause and next/previous. Callback labels identify the Android caller, not the physical button. Notification buttons use the local controller.",
+            Text(if (state.navigationPreview) "Check each short direction on the scooter’s music panel. Joystick next/previous should change the sample; play/pause changes playback only. Directions do not advance automatically."
+                else "Check the song title on the scooter. Try joystick play/pause and next/previous.",
+                style = MaterialTheme.typography.bodySmall)
+            Text("Callback labels identify the Android caller, not the physical button. Notification buttons use the local controller.",
                 style = MaterialTheme.typography.bodySmall)
             if (state.events.none { it.source != Source.PHONE_BUTTON }) Text("No Android media callbacks received yet.", style = MaterialTheme.typography.bodySmall)
             state.events.asReversed().forEach { event ->

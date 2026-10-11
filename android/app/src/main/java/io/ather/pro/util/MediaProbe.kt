@@ -43,7 +43,7 @@ internal class MediaProbe(context: Context) {
         }, Handler(Looper.getMainLooper())).build()
     private var player: MediaPlayer? = null
     private var session: MediaSession? = null
-    private val mutableState = MutableStateFlow(MediaProbeState())
+    private val mutableState = MutableStateFlow(MediaProbeState(navigationPreview = true))
     val state = mutableState.asStateFlow()
 
     fun start() {
@@ -84,7 +84,8 @@ internal class MediaProbe(context: Context) {
             MediaProbeButtonReceiver.session = session
             notifications.createNotificationChannel(NotificationChannel(CHANNEL_ID, "450S Media Test",
                 NotificationManager.IMPORTANCE_LOW).apply { setShowBadge(false) })
-            mutableState.value = MediaProbeState(active = true, playing = true, status = "Session active on phone")
+            mutableState.value = MediaProbeState(active = true, playing = true, status = "Session active on phone",
+                navigationPreview = state.value.navigationPreview)
             publish()
         } catch (_: RuntimeException) {
             stop("Could not start media test")
@@ -92,6 +93,10 @@ internal class MediaProbe(context: Context) {
     }
 
     fun nextTitle() = receive(Command.NEXT, Source.PHONE_BUTTON)
+    fun previousTitle() = receive(Command.PREVIOUS, Source.PHONE_BUTTON)
+    fun selectNavigationPreview(enabled: Boolean) {
+        mutableState.value = state.value.selectNavigationPreview(enabled)
+    }
 
     fun androidNext() {
         if (!state.value.active) return
@@ -116,8 +121,9 @@ internal class MediaProbe(context: Context) {
         val value = state.value
         val metadata = MediaMetadata.Builder()
             .putString(MediaMetadata.METADATA_KEY_TITLE, value.title)
-            .putString(MediaMetadata.METADATA_KEY_ARTIST, "450S PROBE")
-            .putString(MediaMetadata.METADATA_KEY_ALBUM, "Athr+ display test")
+            .putString(MediaMetadata.METADATA_KEY_ARTIST, value.artist)
+            .putString(MediaMetadata.METADATA_KEY_ALBUM,
+                if (value.navigationPreview) "Athr+ sample navigation" else "Athr+ display test")
             .putLong(MediaMetadata.METADATA_KEY_DURATION, 1_000L)
             .build()
         session?.setMetadata(metadata)
@@ -146,7 +152,7 @@ internal class MediaProbe(context: Context) {
         try {
             val notification = Notification.Builder(context, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.ic_media_play)
-                .setContentTitle(state.value.title).setContentText("450S PROBE")
+                .setContentTitle(state.value.title).setContentText(state.value.artist)
                 .setContentIntent(openApp).setOnlyAlertOnce(true).setOngoing(true)
                 .setVisibility(Notification.VISIBILITY_PUBLIC)
                 .addAction(Notification.Action.Builder(Icon.createWithResource(context, android.R.drawable.ic_media_previous), "Previous",

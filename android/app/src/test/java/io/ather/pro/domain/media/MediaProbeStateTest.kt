@@ -41,4 +41,49 @@ class MediaProbeStateTest {
         assertEquals("Media notification registered with Android", state.notificationStatus)
         assertEquals("Session active on phone", state.status)
     }
+
+    @Test fun sampleDirectionsFitTheDisplayWithoutScrollingOrArrowGlyphs() {
+        val samples = MediaProbeState.NAVIGATION_STEPS
+        assertEquals(samples.size, samples.map { it.first }.distinct().size)
+        samples.forEach { (title, instruction) ->
+            assertTrue(title.length in 1..11)
+            assertTrue(title.matches(Regex("[A-Z0-9 ]+")))
+            assertTrue(instruction.isNotBlank())
+        }
+        val preview = MediaProbeState(navigationPreview = true)
+        assertEquals("200M LEFT", preview.title)
+        assertEquals("NAV DEMO", preview.artist)
+    }
+
+    @Test fun previewCyclesSamplesThroughMediaCommandsAndPreservesPause() {
+        var state = MediaProbeState(active = true, playing = true, navigationPreview = true)
+            .receive(Command.PAUSE, 1)
+        MediaProbeState.NAVIGATION_STEPS.drop(1).forEach { (title, instruction) ->
+            state = state.receive(Command.NEXT, 2)
+            assertEquals(title, state.title)
+            assertEquals(instruction, state.instruction)
+            assertFalse(state.playing)
+            assertEquals(Source.MEDIA_CALLBACK, state.events.last().source)
+        }
+        state = state.receive(Command.NEXT, 3)
+        assertEquals("200M LEFT", state.title)
+        state = state.receive(Command.PREVIOUS, 4, Source.PHONE_BUTTON)
+        assertEquals("ARRIVED", state.title)
+        state = state.receive(Command.STOP, 5)
+        assertEquals(state, state.receive(Command.NEXT, 6))
+    }
+
+    @Test fun modeCanChangeOnlyWhenStoppedAndStartsAtFirstSample() {
+        val active = MediaProbeState(active = true, navigationPreview = true, track = 3)
+        assertEquals(active, active.selectNavigationPreview(false))
+        val media = active.receive(Command.STOP, 1).selectNavigationPreview(false)
+        assertFalse(media.active)
+        assertEquals("ATHR TEST 001", media.title)
+        assertNull(media.instruction)
+        assertEquals("450S PROBE", media.artist)
+        val preview = media.selectNavigationPreview(true)
+        assertFalse(preview.active)
+        assertEquals("200M LEFT", preview.title)
+        assertTrue(preview.events.isEmpty())
+    }
 }
