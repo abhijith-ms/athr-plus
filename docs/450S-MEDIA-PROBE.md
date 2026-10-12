@@ -44,3 +44,5 @@ The revised local 1.1.20-450s-test APK (version code 23) compiled and passed all
 The rider subsequently supplied photos showing the test title on the 450S display. An initial attempt reportedly disconnected Bluetooth, but the repeat test stayed connected. Playing regular music on the phone then displayed the normal player's title again. This confirms custom media text and return to normal music for that setup; it does not establish the cause of the earlier disconnect, arbitrary joystick access, or longer-session stability.
 
 The next build adds a [navigation preview](450S-NAVIGATION-PREVIEW.md) using the same session. Select **Media test** on the stopped Settings card to repeat the earlier diagnostic; **Navigation demo** is now the default. The prototype retains foreground-only cleanup and requires no new permissions.
+
+On 12 October 2026, the rider confirmed the sample navigation titles displayed correctly and both scooter joystick and phone controls worked. This establishes the tested media-command path; it does not establish access to joystick inputs outside the scooter's music controls.
