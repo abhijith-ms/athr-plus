@@ -34,3 +34,5 @@ The local 1.1.21-450s-test APK (version code 24) compiled and passed all 226 JVM
 ## Phone result (12 October 2026)
 
 The rider supplied photos showing `200M LEFT` and `50M RIGHT` clearly on the 450S display and confirmed that both the scooter joystick and phone buttons worked properly. This verifies sample display updates and media-command forwarding for the tested phone/scooter setup. Longer-session stability and screen-off operation remain unverified. Live navigation has not been implemented; its first instruction source will follow the rider's navigation-app choice.
+
+The rider selected Google Maps next. The [first Google Maps live test](450S-GOOGLE-MAPS.md) adds a separate explicitly started background display. The sample card retains its foreground-only behavior and must be stopped before starting the live display.

@@ -86,4 +86,16 @@ class MediaProbeStateTest {
         assertEquals("200M LEFT", preview.title)
         assertTrue(preview.events.isEmpty())
     }
+
+    @Test fun joystickSkipsNeverAdvanceALiveNavigationInstruction() {
+        val state = MediaProbeState(active = true, playing = true, liveNavigation = true, liveTitle = "200M LEFT")
+        val next = state.receive(Command.NEXT, 1).receive(Command.PREVIOUS, 2)
+        assertEquals("200M LEFT", next.title)
+        assertEquals(state.track, next.track)
+        assertEquals("GOOGLE MAPS", next.artist)
+        val paused = next.receive(Command.PAUSE, 3)
+        assertEquals("PAUSED", paused.title)
+        assertEquals("CHECK MAP", paused.receive(Command.PLAY, 4).title)
+        assertEquals(state, state.selectNavigationPreview(true))
+    }
 }

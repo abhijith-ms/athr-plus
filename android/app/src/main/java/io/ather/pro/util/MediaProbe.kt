@@ -18,6 +18,7 @@ import android.media.session.PlaybackState
 import android.os.Handler
 import android.os.Looper
 import android.os.Build
+import android.os.PowerManager
 import android.view.KeyEvent
 import io.ather.pro.MainActivity
 import io.ather.pro.R
@@ -27,7 +28,7 @@ import io.ather.pro.domain.media.MediaProbeState.Source
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-/** Foreground-only experiment; Android submission does not establish dashboard receipt. */
+/** Android submission does not establish dashboard receipt; the caller owns its lifetime. */
 internal class MediaProbe(context: Context) {
     private val context = context.applicationContext
     private val audio = this.context.getSystemService(AudioManager::class.java)
@@ -39,15 +40,31 @@ internal class MediaProbe(context: Context) {
     private val focus = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
         .setAudioAttributes(attributes)
         .setOnAudioFocusChangeListener({ change ->
-            if (change < 0) stop("Stopped: audio focus lost")
+            when {
+                state.value.liveNavigation && change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> Unit
+                state.value.liveNavigation && change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                    transientFocusLoss = true
+                    updatePlayback()
+                }
+                change == AudioManager.AUDIOFOCUS_GAIN && transientFocusLoss -> {
+                    transientFocusLoss = false
+                    updatePlayback()
+                }
+                change < 0 -> stop("Stopped: audio focus lost")
+            }
         }, Handler(Looper.getMainLooper())).build()
     private var player: MediaPlayer? = null
     private var session: MediaSession? = null
+    private var transientFocusLoss = false
     private val mutableState = MutableStateFlow(MediaProbeState(navigationPreview = true))
     val state = mutableState.asStateFlow()
 
     fun start() {
         if (state.value.active) return
+        if (MediaProbeButtonReceiver.session != null) {
+            mutableState.value = state.value.copy(status = "Stop the other dashboard display first")
+            return
+        }
         try {
             if (audio.requestAudioFocus(focus) != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
                 stop("Could not start: audio focus denied")
@@ -58,6 +75,7 @@ internal class MediaProbe(context: Context) {
             player!!.apply {
                 isLooping = true
                 setVolume(0f, 0f)
+                if (state.value.liveNavigation) setWakeMode(context, PowerManager.PARTIAL_WAKE_LOCK)
                 setOnErrorListener { _, _, _ -> stop("Stopped: playback failed"); true }
             }
             session = MediaSession(context, "Athr450SMediaProbe")
@@ -84,8 +102,8 @@ internal class MediaProbe(context: Context) {
             MediaProbeButtonReceiver.session = session
             notifications.createNotificationChannel(NotificationChannel(CHANNEL_ID, "450S Media Test",
                 NotificationManager.IMPORTANCE_LOW).apply { setShowBadge(false) })
-            mutableState.value = MediaProbeState(active = true, playing = true, status = "Session active on phone",
-                navigationPreview = state.value.navigationPreview)
+            mutableState.value = state.value.copy(active = true, playing = true, track = 1, events = emptyList(),
+                status = "Session active on phone")
             publish()
         } catch (_: RuntimeException) {
             stop("Could not start media test")
@@ -94,6 +112,17 @@ internal class MediaProbe(context: Context) {
 
     fun nextTitle() = receive(Command.NEXT, Source.PHONE_BUTTON)
     fun previousTitle() = receive(Command.PREVIOUS, Source.PHONE_BUTTON)
+    fun startLiveNavigation() {
+        if (state.value.active) return
+        mutableState.value = MediaProbeState(liveNavigation = true)
+        start()
+    }
+    fun updateNavigationTitle(title: String) {
+        if (!state.value.active || !state.value.liveNavigation || title == state.value.liveTitle) return
+        require(title.length in 1..11 && title.matches(Regex("[A-Z0-9 .]+")))
+        mutableState.value = state.value.copy(liveTitle = title)
+        updatePlayback()
+    }
     fun selectNavigationPreview(enabled: Boolean) {
         mutableState.value = state.value.selectNavigationPreview(enabled)
     }
@@ -123,22 +152,28 @@ internal class MediaProbe(context: Context) {
             .putString(MediaMetadata.METADATA_KEY_TITLE, value.title)
             .putString(MediaMetadata.METADATA_KEY_ARTIST, value.artist)
             .putString(MediaMetadata.METADATA_KEY_ALBUM,
-                if (value.navigationPreview) "Athr+ sample navigation" else "Athr+ display test")
+                if (value.liveNavigation) "Athr+ navigation" else if (value.navigationPreview) "Athr+ sample navigation" else "Athr+ display test")
             .putLong(MediaMetadata.METADATA_KEY_DURATION, 1_000L)
             .build()
         session?.setMetadata(metadata)
         session?.setQueue(listOf(MediaSession.QueueItem(metadata.description, value.track.toLong())))
         session?.setQueueTitle("Now playing")
-        if (value.playing) player?.start() else player?.pause()
+        val audioPlaying = value.playing && !transientFocusLoss
+        if (audioPlaying) player?.start() else player?.pause()
         session?.setPlaybackState(PlaybackState.Builder()
             .setActions(PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or
                 PlaybackState.ACTION_PLAY_PAUSE or PlaybackState.ACTION_SKIP_TO_NEXT or
                 PlaybackState.ACTION_SKIP_TO_PREVIOUS or PlaybackState.ACTION_STOP)
-            .setState(if (value.playing) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED,
-                player?.currentPosition?.toLong() ?: 0L, if (value.playing) 1f else 0f)
+            .setState(if (audioPlaying) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED,
+                player?.currentPosition?.toLong() ?: 0L, if (audioPlaying) 1f else 0f)
             .setActiveQueueItemId(value.track.toLong())
             .build())
         postNotification()
+    }
+
+    private fun updatePlayback() {
+        if (!state.value.active) return
+        try { publish() } catch (_: RuntimeException) { stop("Stopped: media update failed") }
     }
 
     private fun button(code: Int): PendingIntent = PendingIntent.getBroadcast(context, code,
@@ -172,19 +207,22 @@ internal class MediaProbe(context: Context) {
     }
 
     fun stop(reason: String = "Stopped") {
-        MediaProbeButtonReceiver.session = null
-        runCatching { notifications.cancel(NOTIFICATION_ID) }
+        if (session != null && MediaProbeButtonReceiver.session === session) {
+            MediaProbeButtonReceiver.session = null
+            runCatching { notifications.cancel(NOTIFICATION_ID) }
+        }
         session?.release()
         session = null
         player?.release()
         player = null
+        transientFocusLoss = false
         audio.abandonAudioFocusRequest(focus)
         mutableState.value = state.value.copy(active = false, playing = false, status = reason,
             notificationStatus = "Media notification removed")
     }
 
-    private companion object {
+    internal companion object {
         const val CHANNEL_ID = "450s_media_probe"
-        const val NOTIFICATION_ID = 1201
+        const val NOTIFICATION_ID = 1301
     }
 }

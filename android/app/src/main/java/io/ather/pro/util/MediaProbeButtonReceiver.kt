@@ -7,7 +7,7 @@ import android.media.session.MediaSession
 import android.os.Build
 import android.view.KeyEvent
 
-/** Only forwards to the currently running foreground test; never starts playback. */
+/** Only forwards to an already running display; never starts playback. */
 internal class MediaProbeButtonReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_MEDIA_BUTTON) return

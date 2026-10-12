@@ -65,6 +65,7 @@ internal fun SettingsScreen(
     onTariffChange: (Double) -> Unit,
     onLogout: () -> Unit
 ) {
+    val context = LocalContext.current
     var modelMenu by remember { mutableStateOf(false) }
     var rate by rememberSaveable(dashboard.settings.tariffRatePerKWh) { mutableStateOf(dashboard.settings.tariffRatePerKWh.toString()) }
     var signOut by remember { mutableStateOf(false) }
@@ -72,6 +73,7 @@ internal fun SettingsScreen(
     LazyColumn(contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item { AppUpdateCard(updateState, onCheckUpdate, onOpenUpdate) }
         item { MonitoringCard(monitoring, limitEnabled, onMonitoringChange) }
+        if (BuildConfig.DEBUG) item { GoogleMapsDisplayCard() }
         if (BuildConfig.DEBUG) item { MediaProbeCard() }
         item {
             Card(Modifier.fillMaxWidth()) {
@@ -110,6 +112,10 @@ internal fun SettingsScreen(
     }
     if (signOut) AlertDialog(onDismissRequest = { signOut = false }, title = { Text("Sign out of Athr+?") },
         text = { Text("Monitoring will stop. You’ll need an OTP to sign in again.") },
-        confirmButton = { TextButton(onClick = { signOut = false; onLogout() }) { Text("Sign out") } },
+        confirmButton = { TextButton(onClick = {
+            signOut = false
+            if (BuildConfig.DEBUG) io.ather.pro.service.GoogleMapsDisplayService.stop(context)
+            onLogout()
+        }) { Text("Sign out") } },
         dismissButton = { TextButton(onClick = { signOut = false }) { Text("Cancel") } })
 }

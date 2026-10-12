@@ -7,20 +7,25 @@ data class MediaProbeState(
     val events: List<Event> = emptyList(),
     val status: String = "Not started",
     val notificationStatus: String = "Media notification not posted",
-    val navigationPreview: Boolean = false
+    val navigationPreview: Boolean = false,
+    val liveNavigation: Boolean = false,
+    val liveTitle: String = "OPEN MAPS"
 ) {
     enum class Command { PLAY, PAUSE, NEXT, PREVIOUS, STOP }
     enum class Source(val label: String) {
         PHONE_BUTTON("Phone button"), ANDROID_CONTROLLER("Local Android controller"), MEDIA_CALLBACK("Media callback")
     }
     data class Event(val atMs: Long, val command: Command, val source: Source)
-    val title: String get() = if (navigationPreview) NAVIGATION_STEPS[track - 1].first
-        else "ATHR TEST ${track.toString().padStart(3, '0')}"
+    val title: String get() = when {
+        liveNavigation -> if (playing) liveTitle else "PAUSED"
+        navigationPreview -> NAVIGATION_STEPS[track - 1].first
+        else -> "ATHR TEST ${track.toString().padStart(3, '0')}"
+    }
     val instruction: String? get() = if (navigationPreview) NAVIGATION_STEPS[track - 1].second else null
-    val artist: String get() = if (navigationPreview) "NAV DEMO" else "450S PROBE"
+    val artist: String get() = if (liveNavigation) "GOOGLE MAPS" else if (navigationPreview) "NAV DEMO" else "450S PROBE"
 
     fun selectNavigationPreview(enabled: Boolean): MediaProbeState =
-        if (active || navigationPreview == enabled) this else MediaProbeState(navigationPreview = enabled)
+        if (active || liveNavigation || navigationPreview == enabled) this else MediaProbeState(navigationPreview = enabled)
 
     fun receive(command: Command, atMs: Long, source: Source = Source.MEDIA_CALLBACK): MediaProbeState {
         if (!active) return this
@@ -32,11 +37,12 @@ data class MediaProbeState(
                 Command.PAUSE, Command.STOP -> false
                 else -> playing
             },
-            track = when (command) {
+            track = if (liveNavigation) track else when (command) {
                 Command.NEXT -> if (track == lastTrack) 1 else track + 1
                 Command.PREVIOUS -> if (track == 1) lastTrack else track - 1
                 else -> track
             },
+            liveTitle = if (liveNavigation && command == Command.PLAY) "CHECK MAP" else liveTitle,
             events = (events + Event(atMs, command, source)).takeLast(20),
             status = if (command == Command.STOP) "Stopped" else "Session active on phone"
         )
