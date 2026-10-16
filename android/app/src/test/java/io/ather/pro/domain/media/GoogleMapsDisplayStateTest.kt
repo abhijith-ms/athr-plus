@@ -28,6 +28,13 @@ class GoogleMapsDisplayStateTest {
         assertEquals("CHECK MAP", state.labelAt(2_000))
         assertFalse(state.instruction!!.supported)
     }
+    @Test fun theNextMapsUpdateReplacesTheInitialHeading() {
+        val heading = start.posted("route", maps, true, listOf("Head toward Example Road"), 1_000)
+        assertEquals("HEAD TOWARD", heading.labelAt(1_000))
+        val turn = heading.posted("route", maps, true, listOf("200 m", "Turn left"), 2_000)
+        assertEquals("200M LEFT", turn.labelAt(2_000))
+        assertEquals("CHECK MAP", turn.labelAt(122_000))
+    }
     @Test fun onlyRemovalOfTheCurrentMapsNotificationEndsTheDisplay() {
         val state = read()
         assertEquals(state, state.removed("other", maps))

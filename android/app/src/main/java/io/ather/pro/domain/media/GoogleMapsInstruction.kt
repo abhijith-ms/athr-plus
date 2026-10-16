@@ -6,10 +6,11 @@ import java.util.Locale
 data class GoogleMapsInstruction(val label: String, val supported: Boolean) {
     companion object {
         const val PACKAGE = "com.google.android.apps.maps"
+        private val headToward = Regex("head\\s+towards?\\s+\\S.*")
         private val action = Regex("\\b(?:(slight(?:ly)?|sharp(?:ly)?)\\s+(left|right)|(?:turn|keep)\\s+(?:slight(?:ly)?\\s+|sharp(?:ly)?\\s+)?(left|right)|(?:continue|head|go)\\s+straight|(?:make|take)\\s+(?:a\\s+)?u[- ]turn)\\b")
         private val distance = Regex("^(\\d+(?:[.,]\\d{1,2})?)\\s*(km|m|mi|ft)\\b")
         private val exit = Regex("\\b(?:take|use)\\s+(?:the\\s+)?(\\d{1,2})(?:st|nd|rd|th)?\\s+exit\\b")
-        private val invalid = Regex("\\b(?:rerouting|re-routing|recalculating|calculating|searching|lost|paused|loading|offline|waiting|don't|do not|not|never|cannot|can't|avoid|cancelled|canceled|then|followed by|after that)\\b")
+        private val invalid = Regex("\\b(?:rerouting|re-routing|recalculating|calculating|searching|lost|paused|loading|offline|waiting|don't|do not|not|never|cannot|can't|avoid|cancelled|canceled|then|followed by|after that|and\\s+(?:turn|keep|continue|head|go|make|take))\\b")
         private val eta = Regex("\\b(?:min|mins|minutes|hr|hrs|hours|eta|remaining|total|arrival|destination)\\b")
 
         fun parse(fields: List<String>): GoogleMapsInstruction {
@@ -19,7 +20,9 @@ data class GoogleMapsInstruction(val label: String, val supported: Boolean) {
                 .lowercase(Locale.ROOT).trim() }.filter(String::isNotBlank).distinct()
             if (lines.isEmpty()) return unknown
             if (lines.any { invalid.containsMatchIn(it) }) return unknown
-            val codes = lines.flatMap { line ->
+            // The heading's target is a road name, so its words cannot supply another maneuver.
+            val maneuverLines = lines.filterNot { headToward.matches(it) }
+            val codes = maneuverLines.flatMap { line ->
                 action.findAll(line).map { match ->
                     val phrase = match.value
                     when {
@@ -32,7 +35,8 @@ data class GoogleMapsInstruction(val label: String, val supported: Boolean) {
                     }
                 }.toList()
             }.toMutableSet()
-            val exits = lines.filter { "roundabout" in it }.flatMap { line ->
+            if (maneuverLines.size != lines.size) codes += "HEAD TOWARD"
+            val exits = maneuverLines.filter { "roundabout" in it }.flatMap { line ->
                 exit.findAll(line).map { it.groupValues[1].toInt() }.filter { it in 1..20 }.toList()
             }.toSet()
             codes += exits.map { "EXIT$it" }

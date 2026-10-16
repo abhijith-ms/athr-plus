@@ -10,12 +10,12 @@ The foreground playback service and listener are declared in the debug manifest 
 
 ## What this version supports
 
-- Explicit English left/right, slight/sharp, keep-left/right, straight, U-turn, and numbered roundabout-exit text. It does not infer turns from street names or destination-side text.
+- Explicit English left/right, slight/sharp, keep-left/right, straight, U-turn, and numbered roundabout-exit text. An initial `Head toward <road>` instruction becomes `HEAD TOWARD`, without the road name or an inferred compass direction/turn. It does not infer turns from street names or destination-side text.
 - Metric or imperial distance text at the start of a notification field. Units are preserved except sub-kilometre distances, which are converted exactly to metres. If the distance cannot be read confidently or the combined label exceeds 11 characters, only the maneuver is shown. Route ETA distance is not used as turn distance.
 - `CHECK MAP` for unrecognized language, icon-only directions, conflicting turns, rerouting, missing/oversized text, listener loss, future cached timestamps, or reports older than two minutes. Unsupported updates replace the previous turn immediately. A five-second local check expires old readings; checking a cached notification does not make it fresh.
 - Joystick play/pause controls the display (`PAUSED` when paused). Next/previous never advances a live turn: only a new Maps report can change it.
 
-These parsing rules use synthetic JVM fixtures. Google Maps does not provide a stable notification-text contract for this integration, and this phone's real notification format still needs calibration. Short labels and supported cases do not make this a complete navigation engine. The initial maneuver may be an unsupported compass heading; complex instructions may show `CHECK MAP`.
+These parsing rules use synthetic JVM fixtures and a redacted phone-observed starting instruction. Google Maps does not provide a stable notification-text contract for this integration, and other notification formats still need phone calibration. Short labels and supported cases do not make this a complete navigation engine. Compass-only headings and complex instructions may show `CHECK MAP`.
 
 ## Lifetime and music
 
@@ -37,6 +37,18 @@ Media notification ID 1301 and Maps service notification ID 1302 are now separat
 
 Live parsing, screen-off delivery, speech focus handling, notification-removal behavior, charging/media coexistence, and longer Bluetooth stability still need this phone test. JVM tests and a successful APK build do not verify those platform behaviors.
 
+## Phone calibration (13 October screenshots, reviewed 16 October 2026)
+
+The phone received `Head toward Example Road` (road name replaced here), while both Athr+ and the scooter showed `CHECK MAP`. This establishes notification capture and delivery of that fallback label to the scooter. The parser did not support this starting instruction; it is not evidence of a Bluetooth delivery failure.
+
+The next test build renders this pattern as `HEAD TOWARD`, including the `towards` spelling, and never treats words in the target road name as another maneuver. A conflicting turn in another field, negated instruction, or multi-step instruction still falls back to `CHECK MAP`. Tests also cover replacement by a later Maps turn and expiry of that later turn. The heading does not tell the rider which way to face; consult Maps for the initial orientation.
+
+Repeat the parked route-start check with the updated APK, expecting `HEAD TOWARD`. Then compare a real Maps turn update with the scooter, followed by the screen-off and end-of-navigation checks above. These screenshots alone do not establish those later behaviors.
+
 ## Desktop verification (12 October 2026)
 
 The local 1.1.22-450s-test APK (version code 25) compiled and passed all 245 JVM tests. Android lint passed with zero errors; its warnings/information are outside the changed media/navigation files. APK signature verification confirms the same certificate as the previous local build. Merged-manifest checks confirm the service type, non-exported services, binding permission, and one notification listener. The only additional uses-permission is foreground media playback. All four unchanged native Rust libraries match the previous APK; Rust was not rebuilt. No live scooter command or route capture was performed during development.
+
+## Heading-fix verification (16 October 2026)
+
+The 1.1.23-450s-test APK (version code 26) compiled and passed all 248 JVM tests. Android lint passed with zero errors and no issues in the changed Kotlin files. APK signature verification matches 1.1.22, and ZIP integrity and all four unchanged native Rust libraries were verified. Rust was not rebuilt. This change adds no permissions, services, dependencies, or scooter commands. Updated phone/hardware verification is still pending.

@@ -3,7 +3,7 @@ package io.ather.pro.domain.media
 import org.junit.Assert.*
 import org.junit.Test
 
-/** Synthetic notification text; the rider's Maps version still needs calibration. */
+/** Synthetic and redacted phone-observed notification text. */
 class GoogleMapsInstructionTest {
     private fun parse(vararg fields: String) = GoogleMapsInstruction.parse(fields.toList())
 
@@ -34,6 +34,23 @@ class GoogleMapsInstructionTest {
         assertEquals("TURN RIGHT", parse("12345 km", "Turn right").label)
         assertEquals("GO STRAIGHT", parse("Continue straight").label)
     }
+    @Test fun headTowardKeepsItsMeaningWithoutPublishingOrParsingTheRoadName() {
+        listOf("Head toward Example Road", "Head towards Example Road",
+            "Head toward Turn Left Road", "Head toward Roundabout Take the 2nd Exit Road").forEach {
+            assertEquals(GoogleMapsInstruction("HEAD TOWARD", true), parse(it))
+        }
+        assertEquals("HEAD TOWARD", parse("200 m", "Head toward Example Road").label)
+    }
+    @Test fun incompleteNegatedAndConflictingHeadingsStayUnsupported() {
+        listOf(arrayOf("Head toward"), arrayOf("Head toward   "),
+            arrayOf("Do not head toward Example Road"),
+            arrayOf("Rerouting", "Head toward Example Road"),
+            arrayOf("Head toward Example Road", "Turn left"),
+            arrayOf("Head toward Example Road then turn right"),
+            arrayOf("Head toward Example Road and turn right")).forEach { fields ->
+            assertEquals(GoogleMapsInstruction("CHECK MAP", false), parse(*fields))
+        }
+    }
     @Test fun neverInfersTurnsFromStreetNamesOrArrivalSide() {
         listOf("Left Bank Road", "Destination will be on your right", "Head north", "Arrived", "").forEach {
             assertFalse(parse(it).supported)
@@ -55,7 +72,8 @@ class GoogleMapsInstructionTest {
     }
     @Test fun everySupportedActionFitsTheChosenDisplayBudget() {
         listOf("Turn left", "Turn right", "Slight left", "Sharp right", "Keep right",
-            "Continue straight", "Make a U turn", "At the roundabout, take the 20th exit").forEach { action ->
+            "Continue straight", "Make a U turn", "At the roundabout, take the 20th exit",
+            "Head toward Example Road").forEach { action ->
             listOf("", "50 m", "1.2 km", "12345 km").forEach { distance ->
                 val result = parse(distance, action)
                 assertTrue(result.supported)
